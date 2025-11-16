@@ -32,6 +32,25 @@ fun GameWorldScreen(viewModel: GameViewModel, characterName: String) {
     var keysPressed by remember { mutableStateOf(emptySet<Key>()) }
     val focusRequester = remember { FocusRequester() }
     
+    // FPS tracking
+    var frameCount by remember { mutableStateOf(0) }
+    var lastFpsUpdateTime by remember { mutableStateOf(System.currentTimeMillis()) }
+    
+    // Update FPS every second
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000)
+            val now = System.currentTimeMillis()
+            val elapsed = now - lastFpsUpdateTime
+            if (elapsed > 0) {
+                val fps = (frameCount * 1000 / elapsed).toInt()
+                viewModel.updateFps(fps)
+                frameCount = 0
+                lastFpsUpdateTime = now
+            }
+        }
+    }
+    
     // Request focus when screen loads
     LaunchedEffect(Unit) {
         ClientLogger.info("GameWorldScreen: Requesting focus for keyboard input", "Input")
@@ -170,6 +189,9 @@ fun GameWorldScreen(viewModel: GameViewModel, characterName: String) {
             Canvas(
                 modifier = Modifier.fillMaxSize()
             ) {
+            // Increment frame count for FPS calculation
+            frameCount++
+            
             val tileSize = 32f
             val cameraX = (state.playerPosition?.x?.toFloat() ?: 0f) * tileSize - size.width / 2
             val cameraY = (state.playerPosition?.y?.toFloat() ?: 0f) * tileSize - size.height / 2
@@ -273,13 +295,38 @@ fun GameWorldScreen(viewModel: GameViewModel, characterName: String) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Card {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        Text("Character: $characterName", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "Position: (${state.playerPosition?.x ?: 0}, ${state.playerPosition?.y ?: 0})",
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Card {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Text("Character: $characterName", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "Position: (${state.playerPosition?.x ?: 0}, ${state.playerPosition?.y ?: 0})",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                    
+                    // FPS and Ping display
+                    Card {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Text(
+                                "FPS: ${state.fps}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (state.fps >= 60) Color.Green else if (state.fps >= 30) Color.Yellow else Color.Red
+                            )
+                            Text(
+                                "Ping: ${state.ping}ms",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = when {
+                                    state.ping == 0L -> Color.Gray
+                                    state.ping < 50 -> Color.Green
+                                    state.ping < 100 -> Color.Yellow
+                                    else -> Color.Red
+                                }
+                            )
+                        }
                     }
                 }
                 

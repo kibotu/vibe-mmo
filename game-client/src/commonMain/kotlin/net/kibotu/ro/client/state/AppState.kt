@@ -25,6 +25,9 @@ data class AppState(
     val monsters: Map<String, MonsterDTO> = emptyMap(),
     val chatMessages: List<String> = emptyList(),
     // Terminal logs
-    val logs: List<LogEntry> = emptyList()
+    val logs: List<LogEntry> = emptyList(),
+    // Performance metrics
+    val fps: Int = 0,
+    val ping: Long = 0 // milliseconds
 )
 

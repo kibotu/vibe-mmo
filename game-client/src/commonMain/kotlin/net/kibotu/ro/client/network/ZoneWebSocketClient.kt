@@ -42,6 +42,16 @@ class ZoneWebSocketClient {
     private var connectionJob: Job? = null
     private val connectionScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     
+    // Ping tracking
+    private var pingCallback: ((Long) -> Unit)? = null
+    private var lastPingTime: Long = 0
+    private var pingJob: Job? = null
+    private var movementSendTime: Long = 0 // Track when movement was sent
+    
+    fun setPingCallback(callback: (Long) -> Unit) {
+        pingCallback = callback
+    }
+    
     suspend fun connect(
         url: String,
         sessionToken: String,
@@ -83,6 +93,23 @@ class ZoneWebSocketClient {
                         session = this
                         println("WebSocket connection established")
                         
+                        // Start ping measurement loop
+                        pingJob = connectionScope.launch {
+                            while (isActive && session != null) {
+                                delay(5000) // Ping every 5 seconds
+                                if (session != null) {
+                                    lastPingTime = System.currentTimeMillis()
+                                    try {
+                                        // Send ping frame
+                                        session?.send(Frame.Ping(ByteArray(0)))
+                                    } catch (e: Exception) {
+                                        // Connection might be closed
+                                        break
+                                    }
+                                }
+                            }
+                        }
+                        
                         // Start receiving messages
                         try {
                             for (frame in incoming) {
@@ -91,9 +118,23 @@ class ZoneWebSocketClient {
                                     try {
                                         val message = json.decodeFromString(ServerMessage.serializer(), text)
                                         _messages.value = message
+                                        
+                                        // Measure ping from movement confirmations (more accurate)
+                                        if (message is ServerMessage.Movement && movementSendTime > 0) {
+                                            val ping = System.currentTimeMillis() - movementSendTime
+                                            pingCallback?.invoke(ping)
+                                            movementSendTime = 0 // Reset after measurement
+                                        }
                                     } catch (e: Exception) {
                                         // Handle deserialization error
                                         println("Failed to deserialize message: $text, error: ${e.message}")
+                                    }
+                                } else if (frame is Frame.Pong) {
+                                    // Measure ping from pong response
+                                    if (lastPingTime > 0) {
+                                        val ping = System.currentTimeMillis() - lastPingTime
+                                        pingCallback?.invoke(ping)
+                                        lastPingTime = 0 // Reset after measurement
                                     }
                                 } else if (frame is Frame.Close) {
                                     println("WebSocket received close frame")
@@ -147,6 +188,9 @@ class ZoneWebSocketClient {
         }
         
         try {
+            // Track when movement is sent for ping measurement
+            movementSendTime = System.currentTimeMillis()
+            
             val message = ClientMessage.Move(direction, position)
             val jsonString = json.encodeToString(ClientMessage.serializer(), message)
             currentSession.send(Frame.Text(jsonString))
@@ -189,7 +233,9 @@ class ZoneWebSocketClient {
     
     suspend fun disconnect() {
         println("Disconnecting WebSocket...")
+        pingJob?.cancel()
         connectionJob?.cancel()
+        pingCallback = null
         try {
             session?.close()
         } catch (e: Exception) {

@@ -186,6 +186,12 @@ class GameViewModel {
                 
                 // Connect WebSocket
                 ClientLogger.info("Connecting to WebSocket: ${response.websocketUrl}", "WebSocket")
+                
+                // Set up ping callback
+                zoneWebSocketClient.setPingCallback { ping ->
+                    updatePing(ping)
+                }
+                
                 val wsResult = zoneWebSocketClient.connect(
                     response.websocketUrl,
                     token,
@@ -397,6 +403,14 @@ class GameViewModel {
     
     fun clearLogs() {
         ClientLogger.clear()
+    }
+    
+    fun updateFps(fps: Int) {
+        _state.update { it.copy(fps = fps) }
+    }
+    
+    fun updatePing(ping: Long) {
+        _state.update { it.copy(ping = ping) }
     }
     
     fun cleanup() {

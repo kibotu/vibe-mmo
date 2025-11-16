@@ -244,7 +244,7 @@ CREATE TABLE sessions (
 
 ### Default Port
 
-- **Development**: `8080`
+- **Development**: `28080`
 - **Production**: Configurable via `application.conf`
 
 ---
@@ -358,7 +358,7 @@ CREATE TABLE characters (
 
 ### Default Port
 
-- **Development**: `8081`
+- **Development**: `28081`
 - **Production**: Configurable via `application.conf`
 
 ---
@@ -414,7 +414,7 @@ Authorization: Bearer <session-token>
 {
   "success": true,
   "zoneInstanceId": "instance-uuid",
-  "websocketUrl": "ws://localhost:8082/ws/zone/{instanceId}",
+  "websocketUrl": "ws://localhost:28082/ws/zone/{instanceId}",
   "spawnPosition": {
     "x": 150,
     "y": 150
@@ -558,7 +558,7 @@ Character-Id: <character-id>
 
 ### Default Port
 
-- **Development**: `8082`
+- **Development**: `28082`
 - **Production**: Configurable via `application.conf`
 
 ---
@@ -791,9 +791,9 @@ All servers expose REST APIs using JSON:
 
 ```
 Local Machine:
-├── Account Server (localhost:8080)
-├── Character Server (localhost:8081)
-├── Zone Server (localhost:8082)
+├── Account Server (localhost:28080)
+├── Character Server (localhost:28081)
+├── Zone Server (localhost:28082)
 └── Game Client (Desktop App)
 ```
 
@@ -801,9 +801,9 @@ Local Machine:
 
 ```
 Load Balancer / Reverse Proxy (nginx)
-├── Account Server Cluster (port 8080)
-├── Character Server Cluster (port 8081)
-├── Zone Server Cluster (port 8082)
+├── Account Server Cluster (port 28080)
+├── Character Server Cluster (port 28081)
+├── Zone Server Cluster (port 28082)
 │   ├── Zone Instance 1
 │   ├── Zone Instance 2
 │   └── Zone Instance N
@@ -817,7 +817,7 @@ Each server uses `application.conf` (HOCON format):
 ```hocon
 ktor {
     deployment {
-        port = 8080
+        port = 28080
         host = "0.0.0.0"
     }
     application {
@@ -902,19 +902,19 @@ jwt {
 
 | Service | Port |
 |---------|------|
-| Account Server | 8080 |
-| Character Server | 8081 |
-| Zone Server | 8082 |
+| Account Server | 28080 |
+| Character Server | 28081 |
+| Zone Server | 28082 |
 
 ### API Base URLs
 
-- Account Server: `http://localhost:8080`
-- Character Server: `http://localhost:8081`
-- Zone Server: `http://localhost:8082`
+- Account Server: `http://localhost:28080`
+- Character Server: `http://localhost:28081`
+- Zone Server: `http://localhost:28082`
 
 ### WebSocket URLs
 
-- Zone Server: `ws://localhost:8082/ws/zone/{instanceId}`
+- Zone Server: `ws://localhost:28082/ws/zone/{instanceId}`
 
 ---
 

@@ -33,6 +33,9 @@ dependencies {
     implementation("io.ktor:ktor-client-cio-jvm:${libs.versions.ktor.get()}")
     implementation("io.ktor:ktor-client-content-negotiation-jvm:${libs.versions.ktor.get()}")
     
+    // Config support
+    implementation("com.typesafe:config:1.4.3")
+    
     // Kotlinx datetime
     implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.5.0")
     

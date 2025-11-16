@@ -1,5 +1,6 @@
 package net.kibotu.ro.account
 
+import com.typesafe.config.ConfigFactory
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.config.*
@@ -15,16 +16,63 @@ import net.kibotu.ro.account.service.AccountService
 import net.kibotu.ro.account.service.JwtService
 import net.kibotu.ro.account.service.PasswordService
 
+private fun loadConfigFromFile(): ApplicationConfig {
+    return try {
+        val resource = Application::class.java.classLoader.getResource("application.conf")
+        if (resource != null) {
+            val hoconConfig = ConfigFactory.parseURL(resource).resolve()
+            HoconApplicationConfig(hoconConfig)
+        } else {
+            // Fallback: create minimal config
+            MapApplicationConfig().apply {
+                put("ktor.database.driver", "org.h2.Driver")
+                put("ktor.database.url", "jdbc:h2:mem:accountdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL")
+                put("ktor.database.user", "sa")
+                put("ktor.database.password", "")
+                put("ktor.jwt.secret", "your-secret-key-change-in-production-min-256-bits")
+                put("ktor.jwt.issuer", "ragnarok-account-server")
+                put("ktor.jwt.audience", "ragnarok-clients")
+                put("ktor.jwt.expirationHours", "24")
+            }
+        }
+    } catch (e: Exception) {
+        println("Warning: Could not load application.conf, using defaults: ${e.message}")
+        MapApplicationConfig().apply {
+            put("ktor.database.driver", "org.h2.Driver")
+            put("ktor.database.url", "jdbc:h2:mem:accountdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL")
+            put("ktor.database.user", "sa")
+            put("ktor.database.password", "")
+            put("ktor.jwt.secret", "your-secret-key-change-in-production-min-256-bits")
+            put("ktor.jwt.issuer", "ragnarok-account-server")
+            put("ktor.jwt.audience", "ragnarok-clients")
+            put("ktor.jwt.expirationHours", "24")
+        }
+    }
+}
+
 fun main() {
-    val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
+    val port = System.getenv("PORT")?.toIntOrNull() ?: 28080
     val host = System.getenv("HOST") ?: "0.0.0.0"
     
-    embeddedServer(Netty, port = port, host = host, module = Application::module)
-        .start(wait = true)
+    try {
+        embeddedServer(Netty, port = port, host = host, module = Application::module)
+            .start(wait = true)
+    } catch (e: java.net.BindException) {
+        System.err.println("ERROR: Port $port is already in use.")
+        System.err.println("")
+        System.err.println("Account Server allows only ONE instance per machine.")
+        System.err.println("Please stop the existing Account Server before starting a new one.")
+        System.err.println("")
+        System.err.println("To find and stop the process:")
+        System.err.println("  netstat -ano | findstr :$port")
+        System.err.println("  taskkill /PID <PID> /F")
+        System.exit(1)
+    }
 }
 
 fun Application.module() {
-    val config = environment.config
+    // Load config from application.conf file
+    val config = loadConfigFromFile()
     
     // Initialize database
     DatabaseFactory.init(config)
@@ -52,3 +100,4 @@ fun Application.module() {
         accountRoutes(accountService)
     }
 }
+

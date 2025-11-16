@@ -21,6 +21,9 @@ dependencies {
     implementation(libs.ktor.serverCore)
     implementation(libs.ktor.serverNetty)
     
+    // Config support
+    implementation("com.typesafe:config:1.4.3")
+    
     // Content negotiation
     implementation("io.ktor:ktor-server-content-negotiation-jvm:${libs.versions.ktor.get()}")
     implementation("io.ktor:ktor-serialization-kotlinx-json-jvm:${libs.versions.ktor.get()}")

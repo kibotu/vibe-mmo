@@ -15,6 +15,60 @@ This repository contains a minimal, **Kotlin‑Multiplatform** prototype of a Ra
 └─ shared/              # Common multiplatform objects
 ```
 
+## Quickstart
+
+### Prerequisites
+
+- **Java 17+** (JDK)
+- **Gradle** (wrapper included)
+
+### Windows
+
+The easiest way to get started is using the provided scripts:
+
+1. **Start all servers:**
+   ```powershell
+   # Double-click start-servers.bat or run:
+   .\start-servers.bat
+   ```
+   This will start all three servers (Account Server on port 28080, Character Server on port 28081, Zone Server on port 28082) in separate windows.
+   
+   **Important:** 
+   - **Account Server** and **Character Server** allow only **ONE instance** per machine
+   - **Zone Server** allows **multiple instances** (use `start-zone-server.bat [PORT]` for additional instances)
+   - The script will prevent starting duplicate account/character servers
+
+2. **Start the client:**
+   ```powershell
+   # Double-click start-client.bat or run:
+   .\start-client.bat
+   ```
+   **Note:** Multiple client instances are allowed. You can run multiple clients simultaneously.
+
+3. **Start additional zone servers:**
+   ```powershell
+   # Start a zone server on a custom port (e.g., 28083)
+   .\start-zone-server.bat 28083
+   ```
+
+4. **Stop all servers:**
+   - Press `Ctrl+C` in the main server window, or
+   - Run `.\stop-servers.bat` to manually stop all servers
+
+**Note:** All scripts automatically clean up processes when closed or interrupted, so you don't need to worry about orphaned processes.
+
+### Linux/Mac
+
+```bash
+# Terminal 1 - Start all servers (or use separate terminals)
+./gradlew :account-server:run &
+./gradlew :character-server:run &
+./gradlew :zone-server:run &
+
+# Terminal 2 - Start client
+./gradlew :game-client:run
+```
+
 ## Build Tools
 
 - **Gradle** (wrapper) – all modules share `settings.gradle.kts` and a common `build.gradle.kts`.
@@ -36,6 +90,12 @@ The wrapper pulls the correct Gradle version.
 
 ## Running the Project
 
+### Using Scripts (Windows - Recommended)
+
+See the [Quickstart](#quickstart) section above for the easiest way to run everything.
+
+### Manual Start (All Platforms)
+
 Start each server in its own terminal (or backgrounded tasks), then launch the client.
 
 ```bash
@@ -49,7 +109,14 @@ Start each server in its own terminal (or backgrounded tasks), then launch the c
 ./gradlew :game-client:run
 ```
 
-All servers listen on their default ports (see the individual module readmes).  The Compose client will automatically discover and connect to these ports.
+All servers listen on their default ports:
+- **Account Server**: Port 28080 (single instance only)
+- **Character Server**: Port 28081 (single instance only)
+- **Zone Server**: Port 28082 (multiple instances allowed, use `PORT=28083` env var for additional instances)
+
+**Note:** Account and Character servers enforce single-instance restrictions. Zone servers and clients can run multiple instances.
+
+The Compose client will automatically discover and connect to these ports.
 
 ### Production Configuration
 
@@ -75,10 +142,18 @@ If you encounter errors like:
 ```
 Unable to delete directory 'shared\build'
 Failed to delete some children. This might happen because a process has files open
+Could not delete 'D:\...\shared\build\kotlin\compileKotlinJvm\cacheable\caches-jvm'
 ```
 
-**Solutions:**
-1. **Stop Gradle daemons:**
+**Note:** The start scripts (`start-servers.ps1` and `start-servers.bat`) now automatically handle this by:
+- Stopping all Gradle daemons before starting servers
+- Pre-building the shared module once to avoid concurrent builds
+- Using `--no-daemon` flag to prevent file locking conflicts
+- Adding proper delays between server starts
+
+**If you still encounter this issue:**
+
+1. **Stop Gradle daemons manually:**
    ```bash
    ./gradlew --stop
    ```
@@ -92,24 +167,21 @@ Failed to delete some children. This might happen because a process has files op
    Remove-Item -Path "shared\build" -Recurse -Force
    ```
 
-5. **Workaround:** Skip the clean task if you just need to build:
-   ```bash
-   ./gradlew build  # Instead of clean build
-   ```
+5. **Use the stop script:** Run `.\stop-servers.bat` to properly stop all servers and Gradle daemons.
 
 #### Port Already in Use
 
 If a server fails to start with a port conflict error:
 
 ```bash
-# Windows - Find process using port (e.g., 8080)
-netstat -ano | findstr :8080
+# Windows - Find process using port (e.g., 28080)
+netstat -ano | findstr :28080
 
 # Kill the process (replace PID with actual process ID)
 taskkill /PID <PID> /F
 
 # Linux/Mac - Find and kill process
-lsof -ti:8080 | xargs kill -9
+lsof -ti:28080 | xargs kill -9
 ```
 
 #### Gradle Daemon Issues

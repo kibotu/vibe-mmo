@@ -155,3 +155,5 @@ $RECYCLE.BIN/
 .gradle/
 .kotlin/
 opencode.exe
+
+**/*/.gradle-home/

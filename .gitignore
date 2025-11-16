@@ -157,3 +157,4 @@ $RECYCLE.BIN/
 opencode.exe
 
 **/*/.gradle-home/
+**/*.db

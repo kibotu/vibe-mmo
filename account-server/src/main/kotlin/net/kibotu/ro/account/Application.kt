@@ -9,10 +9,13 @@ import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.http.*
 import kotlinx.serialization.json.Json
 import net.kibotu.ro.account.database.DatabaseFactory
 import net.kibotu.ro.account.routes.accountRoutes
+import net.kibotu.ro.account.routes.adminRoutes
 import net.kibotu.ro.account.service.AccountService
+import net.kibotu.ro.account.service.AdminService
 import net.kibotu.ro.account.service.JwtService
 import net.kibotu.ro.account.service.PasswordService
 
@@ -55,8 +58,27 @@ fun main() {
     val host = System.getenv("HOST") ?: "0.0.0.0"
     
     try {
-        embeddedServer(Netty, port = port, host = host, module = Application::module)
-            .start(wait = true)
+        val server = embeddedServer(Netty, port = port, host = host, module = Application::module)
+        server.start(wait = false)
+        
+        // Determine the admin URL
+        val adminUrl = if (host == "0.0.0.0") {
+            "http://localhost:$port/admin"
+        } else {
+            "http://$host:$port/admin"
+        }
+        
+        println("")
+        println("=".repeat(70))
+        println("Account Server started successfully!")
+        println("=".repeat(70))
+        println("Server URL: http://$host:$port")
+        println("Admin Panel: $adminUrl")
+        println("=".repeat(70))
+        println("")
+        
+        // Keep the main thread alive
+        Thread.currentThread().join()
     } catch (e: java.net.BindException) {
         System.err.println("ERROR: Port $port is already in use.")
         System.err.println("")
@@ -81,6 +103,7 @@ fun Application.module() {
     val passwordService = PasswordService
     val jwtService = JwtService(config)
     val accountService = AccountService(passwordService, jwtService)
+    val adminService = AdminService()
     
     // Configure content negotiation
     install(ContentNegotiation) {
@@ -97,7 +120,17 @@ fun Application.module() {
             call.respondText("Ragnarok Account Server - Running")
         }
         
+        // Admin panel - serve HTML file
+        get("/admin") {
+            val htmlContent = Application::class.java.classLoader.getResourceAsStream("admin/index.html")
+                ?.bufferedReader()?.readText()
+                ?: throw Exception("Admin HTML file not found")
+            call.respondText(htmlContent, ContentType.Text.Html)
+        }
+        
+        // API routes
         accountRoutes(accountService)
+        adminRoutes(adminService)
     }
 }
 

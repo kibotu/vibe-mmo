@@ -34,4 +34,6 @@ plugins {
 
 include(":composeApp")
 include(":server")
+include(":account-server")
+include(":character-server")
 include(":shared")

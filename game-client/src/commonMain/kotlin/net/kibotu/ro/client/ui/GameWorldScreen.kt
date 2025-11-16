@@ -53,18 +53,15 @@ fun GameWorldScreen(viewModel: GameViewModel, characterName: String) {
     
     // Request focus when screen loads
     LaunchedEffect(Unit) {
-        ClientLogger.info("GameWorldScreen: Requesting focus for keyboard input", "Input")
         try {
             focusRequester.requestFocus()
-            ClientLogger.info("GameWorldScreen: Focus requested successfully", "Input")
         } catch (e: Exception) {
-            ClientLogger.error("GameWorldScreen: Failed to request focus: ${e.message}", "Input")
+            ClientLogger.error("Failed to request focus: ${e.message}", "Input")
         }
     }
     
     // Handle continuous movement when keys are held down
     LaunchedEffect(Unit) {
-        ClientLogger.info("Continuous movement loop started", "Input")
         // Movement rate: move every 150ms while key is held
         while (true) {
             val currentKeys = keysPressed
@@ -114,7 +111,6 @@ fun GameWorldScreen(viewModel: GameViewModel, characterName: String) {
                     indication = null,
                     interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                 ) {
-                    ClientLogger.info("Game area clicked - requesting focus", "Input")
                     focusRequester.requestFocus()
                 }
                 .onKeyEvent { event ->
@@ -128,7 +124,7 @@ fun GameWorldScreen(viewModel: GameViewModel, characterName: String) {
                         event.type == KeyEventType.KeyDown -> {
                             val key = event.key
                             ClientLogger.info("KeyDown event: key=$key", "Input")
-                            
+
                             // Only track movement keys
                             if (key == Key.W || key == Key.DirectionUp || 
                                 key == Key.S || key == Key.DirectionDown ||
@@ -137,7 +133,7 @@ fun GameWorldScreen(viewModel: GameViewModel, characterName: String) {
                                 ClientLogger.info("Movement key detected: $key", "Input")
                                 keysPressed = keysPressed + key
                                 ClientLogger.debug("Keys pressed set updated: $keysPressed", "Input")
-                                
+
                                 // Trigger immediate movement on key down
                                 val direction = when (key) {
                                     Key.W, Key.DirectionUp -> {
@@ -162,10 +158,7 @@ fun GameWorldScreen(viewModel: GameViewModel, characterName: String) {
                                     }
                                 }
                                 
-                                direction?.let {
-                                    viewModel.movePlayer(it)
-                                }
-                                
+                                direction?.let { viewModel.movePlayer(it) }
                                 true
                             } else {
                                 ClientLogger.debug("Non-movement key ignored: $key", "Input")

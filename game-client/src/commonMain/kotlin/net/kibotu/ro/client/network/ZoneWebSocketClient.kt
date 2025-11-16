@@ -63,8 +63,7 @@ class ZoneWebSocketClient {
             }
             client = wsClient
             
-            // Parse WebSocket URL - use the URL directly from the response
-            // The server should provide a full WebSocket URL like ws://localhost:28082/ws/zone/{instanceId}
+            // Parse WebSocket URL - convert HTTP/HTTPS to WS/WSS
             val wsUrl = url.replace("http://", "ws://").replace("https://", "wss://")
             
             // Extract host, port, and path from URL
@@ -73,8 +72,7 @@ class ZoneWebSocketClient {
             val hostPort = withoutProtocol.substringBefore("/")
             val host = hostPort.substringBefore(":")
             val portStr = hostPort.substringAfter(":", "")
-            val port = if (portStr.isNotEmpty()) portStr.toIntOrNull() ?: if (protocol == "wss") 443 else 80
-                else if (protocol == "wss") 443 else 80
+            val port = portStr.toIntOrNull() ?: if (protocol == "wss") 443 else 80
             val path = "/" + withoutProtocol.substringAfter("/", "")
             
             // Launch WebSocket connection in background coroutine
@@ -91,7 +89,6 @@ class ZoneWebSocketClient {
                         }
                     ) {
                         session = this
-                        println("WebSocket connection established")
                         
                         // Start ping measurement loop
                         pingJob = connectionScope.launch {
@@ -100,10 +97,8 @@ class ZoneWebSocketClient {
                                 if (session != null) {
                                     lastPingTime = System.currentTimeMillis()
                                     try {
-                                        // Send ping frame
                                         session?.send(Frame.Ping(ByteArray(0)))
                                     } catch (e: Exception) {
-                                        // Connection might be closed
                                         break
                                     }
                                 }
@@ -123,44 +118,36 @@ class ZoneWebSocketClient {
                                         if (message is ServerMessage.Movement && movementSendTime > 0) {
                                             val ping = System.currentTimeMillis() - movementSendTime
                                             pingCallback?.invoke(ping)
-                                            movementSendTime = 0 // Reset after measurement
+                                            movementSendTime = 0
                                         }
                                     } catch (e: Exception) {
-                                        // Handle deserialization error
-                                        println("Failed to deserialize message: $text, error: ${e.message}")
+                                        // Handle deserialization error silently
                                     }
                                 } else if (frame is Frame.Pong) {
                                     // Measure ping from pong response
                                     if (lastPingTime > 0) {
                                         val ping = System.currentTimeMillis() - lastPingTime
                                         pingCallback?.invoke(ping)
-                                        lastPingTime = 0 // Reset after measurement
+                                        lastPingTime = 0
                                     }
                                 } else if (frame is Frame.Close) {
-                                    println("WebSocket received close frame")
                                     break
                                 }
                             }
                         } catch (e: CancellationException) {
-                            println("WebSocket receive cancelled: ${e.message}")
                             throw e
                         } catch (e: Exception) {
-                            println("WebSocket receive error: ${e.message}")
+                            // Connection error - will be handled by caller
                         } finally {
-                            println("WebSocket receive loop ended")
-                            // Clear session when receive loop ends
                             session = null
                         }
                     }
                 } catch (e: CancellationException) {
-                    println("WebSocket connection cancelled: ${e.message}")
                     session = null
                     throw e
                 } catch (e: Exception) {
-                    println("WebSocket connection error: ${e.message}")
                     session = null
                 } finally {
-                    println("WebSocket connection closed")
                     session = null
                 }
             }
@@ -181,25 +168,16 @@ class ZoneWebSocketClient {
     }
     
     suspend fun sendMove(direction: String, position: Position) {
-        val currentSession = session
-        if (currentSession == null) {
-            println("Failed to send move message: WebSocket session is null")
-            return
-        }
+        val currentSession = session ?: return
         
         try {
-            // Track when movement is sent for ping measurement
             movementSendTime = System.currentTimeMillis()
-            
             val message = ClientMessage.Move(direction, position)
             val jsonString = json.encodeToString(ClientMessage.serializer(), message)
             currentSession.send(Frame.Text(jsonString))
         } catch (e: CancellationException) {
-            println("Failed to send move message: Channel was cancelled")
             session = null
         } catch (e: Exception) {
-            println("Failed to send move message: ${e.message}")
-            // If send fails, the connection might be dead
             if (e.message?.contains("cancelled", ignoreCase = true) == true ||
                 e.message?.contains("closed", ignoreCase = true) == true) {
                 session = null
@@ -208,22 +186,15 @@ class ZoneWebSocketClient {
     }
     
     suspend fun sendChat(message: String) {
-        val currentSession = session
-        if (currentSession == null) {
-            println("Failed to send chat message: WebSocket session is null")
-            return
-        }
+        val currentSession = session ?: return
         
         try {
             val chatMessage = ClientMessage.Chat(message)
             val jsonString = json.encodeToString(ClientMessage.serializer(), chatMessage)
             currentSession.send(Frame.Text(jsonString))
         } catch (e: CancellationException) {
-            println("Failed to send chat message: Channel was cancelled")
             session = null
         } catch (e: Exception) {
-            println("Failed to send chat message: ${e.message}")
-            // If send fails, the connection might be dead
             if (e.message?.contains("cancelled", ignoreCase = true) == true ||
                 e.message?.contains("closed", ignoreCase = true) == true) {
                 session = null
@@ -232,24 +203,22 @@ class ZoneWebSocketClient {
     }
     
     suspend fun disconnect() {
-        println("Disconnecting WebSocket...")
         pingJob?.cancel()
         connectionJob?.cancel()
         pingCallback = null
         try {
             session?.close()
         } catch (e: Exception) {
-            println("Error closing session: ${e.message}")
+            // Ignore close errors
         }
         session = null
         try {
             client?.close()
         } catch (e: Exception) {
-            println("Error closing client: ${e.message}")
+            // Ignore close errors
         }
         client = null
         _messages.value = null
-        println("WebSocket disconnected")
     }
 }
 

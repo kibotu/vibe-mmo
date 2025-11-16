@@ -21,8 +21,6 @@ class GameViewModel {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     
     init {
-        ClientLogger.info("GameViewModel initialized", "ViewModel")
-        
         // Observe WebSocket messages
         scope.launch {
             zoneWebSocketClient.messages.collect { message ->
@@ -45,7 +43,7 @@ class GameViewModel {
         accountClient.register(email, password)
             .onSuccess {
                 ClientLogger.info("Registration successful: $email", "Account")
-                _state.update { 
+                _state.update {
                     it.copy(
                         isLoading = false,
                         errorMessage = "Registration successful! Please login."
@@ -54,7 +52,7 @@ class GameViewModel {
             }
             .onFailure { e ->
                 ClientLogger.error("Registration failed: ${e.message}", "Account")
-                _state.update { 
+                _state.update {
                     it.copy(
                         isLoading = false,
                         errorMessage = e.message ?: "Registration failed"
@@ -86,14 +84,13 @@ class GameViewModel {
                         currentScreen = Screen.CharacterSelection
                     )
                 }
-                // Launch loadCharacters in ViewModel's scope to avoid composition scope issues
                 scope.launch {
                     loadCharacters()
                 }
             }
             .onFailure { e ->
                 ClientLogger.error("Login failed: ${e.message}", "Account")
-                _state.update { 
+                _state.update {
                     it.copy(
                         isLoading = false,
                         errorMessage = e.message ?: "Login failed"
@@ -117,13 +114,13 @@ class GameViewModel {
     suspend fun loadCharacters() {
         val token = _state.value.sessionToken ?: return
         ClientLogger.info("Loading characters...", "Character")
-        
+
         _state.update { it.copy(isLoading = true) }
         
         characterClient.listCharacters(token)
             .onSuccess { characters ->
                 ClientLogger.info("Loaded ${characters.size} character(s)", "Character")
-                _state.update { 
+                _state.update {
                     it.copy(
                         isLoading = false,
                         characters = characters
@@ -132,7 +129,7 @@ class GameViewModel {
             }
             .onFailure { e ->
                 ClientLogger.error("Failed to load characters: ${e.message}", "Character")
-                _state.update { 
+                _state.update {
                     it.copy(
                         isLoading = false,
                         errorMessage = e.message ?: "Failed to load characters"
@@ -220,7 +217,7 @@ class GameViewModel {
             }
             .onFailure { e ->
                 ClientLogger.error("Failed to join zone: ${e.message}", "Zone")
-                _state.update { 
+                _state.update {
                     it.copy(
                         isLoading = false,
                         errorMessage = e.message ?: "Failed to join zone"
@@ -307,7 +304,6 @@ class GameViewModel {
                         players = playersMap,
                         npcs = message.npcs.associateBy { it.id },
                         monsters = message.monsters.associateBy { it.id },
-                        // Sync own position from authoritative zone state
                         playerPosition = syncedPlayerPosition
                     )
                 }
@@ -321,50 +317,33 @@ class GameViewModel {
                     direction = "down"
                 )
                 _state.update {
-                    it.copy(
-                        players = it.players + (message.characterId to player)
-                    )
+                    it.copy(players = it.players + (message.characterId to player))
                 }
             }
             is ServerMessage.PlayerLeft -> {
                 ClientLogger.info("Player left: ${message.characterId}", "WebSocket")
                 _state.update {
-                    it.copy(
-                        players = it.players - message.characterId
-                    )
+                    it.copy(players = it.players - message.characterId)
                 }
             }
             is ServerMessage.Movement -> {
-                ClientLogger.debug("Movement update: ${message.characterId} -> (${message.position.x}, ${message.position.y})", "WebSocket")
                 _state.update { state ->
                     val isOwnCharacter = state.selectedCharacter?.id == message.characterId
                     
-                    // Update or create player entry
                     val existingPlayer = state.players[message.characterId]
-                    val updatedPlayer = if (existingPlayer != null) {
-                        existingPlayer.copy(
-                            position = message.position,
-                            direction = message.direction
-                        )
-                    } else {
-                        // Player not in our map yet, create entry
-                        // We might not have the name, so use characterId as fallback
-                        PlayerDTO(
-                            characterId = message.characterId,
-                            name = message.characterId, // Fallback, should be updated from zone state
-                            position = message.position,
-                            direction = message.direction
-                        )
-                    }
+                    val updatedPlayer = existingPlayer?.copy(
+                        position = message.position,
+                        direction = message.direction
+                    ) ?: PlayerDTO(
+                        characterId = message.characterId,
+                        name = message.characterId,
+                        position = message.position,
+                        direction = message.direction
+                    )
                     
                     state.copy(
                         players = state.players + (message.characterId to updatedPlayer),
-                        // Always sync own position from server (authoritative)
-                        playerPosition = if (isOwnCharacter) {
-                            message.position
-                        } else {
-                            state.playerPosition
-                        }
+                        playerPosition = if (isOwnCharacter) message.position else state.playerPosition
                     )
                 }
             }
@@ -379,8 +358,6 @@ class GameViewModel {
             is ServerMessage.Error -> {
                 ClientLogger.error("Server error: ${message.message}", "WebSocket")
                 _state.update { state ->
-                    // If it's a movement error, we might want to revert the optimistic update
-                    // For now, just show the error - the server will send correct position if needed
                     state.copy(errorMessage = message.message)
                 }
             }
@@ -396,8 +373,6 @@ class GameViewModel {
         scope.launch {
             zoneWebSocketClient.disconnect()
         }
-        // Optionally clear credentials on logout
-        // credentialStorage.clearCredentials()
         _state.value = AppState()
     }
     

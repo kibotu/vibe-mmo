@@ -43,9 +43,9 @@ fun Route.zoneRoutes(zoneService: ZoneService) {
             
             try {
                 val request = call.receive<JoinZoneRequest>()
+                val token = call.request.headers["Authorization"]?.removePrefix("Bearer ")?.trim() ?: ""
                 
-                when (val result = zoneService.joinZone(request.characterId, request.zoneName, 
-                    call.request.headers["Authorization"]?.removePrefix("Bearer ")?.trim() ?: "")) {
+                when (val result = zoneService.joinZone(request.characterId, request.zoneName, token)) {
                     is net.kibotu.ro.zone.service.JoinZoneResult.Success -> {
                         // Build full WebSocket URL
                         val host = call.request.host()

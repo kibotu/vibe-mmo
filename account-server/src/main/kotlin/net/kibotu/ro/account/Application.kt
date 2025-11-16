@@ -36,7 +36,7 @@ private fun loadConfigFromFile(): ApplicationConfig {
             }
         }
     } catch (e: Exception) {
-        println("Warning: Could not load application.conf, using defaults: ${e.message}")
+        System.err.println("Warning: Could not load application.conf, using defaults: ${e.message}")
         MapApplicationConfig().apply {
             put("ktor.database.driver", "org.h2.Driver")
             put("ktor.database.url", "jdbc:h2:mem:accountdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL")

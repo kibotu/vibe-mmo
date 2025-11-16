@@ -140,17 +140,9 @@ class ZoneInstance(
      */
     private fun isValidPosition(position: Position): Boolean {
         // Check bounds
-        val isValid = position.x >= 0 && position.y >= 0 && 
-                     position.x < mapData.width && position.y < mapData.height
-        
-        if (!isValid) {
-            println("[ZoneInstance] Position validation failed: (${position.x}, ${position.y}) is out of bounds. Map size: ${mapData.width}x${mapData.height}")
-        }
-        
+        return position.x >= 0 && position.y >= 0 && 
+               position.x < mapData.width && position.y < mapData.height
         // TODO: Check collision map if available
-        // For now, just check bounds
-        
-        return isValid
     }
     
     /**

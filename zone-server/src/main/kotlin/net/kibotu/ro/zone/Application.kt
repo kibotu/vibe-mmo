@@ -31,7 +31,7 @@ private fun loadConfigFromFile(): ApplicationConfig {
             }
         }
     } catch (e: Exception) {
-        println("Warning: Could not load application.conf, using defaults: ${e.message}")
+        System.err.println("Warning: Could not load application.conf, using defaults: ${e.message}")
         MapApplicationConfig().apply {
             put("ktor.accountServer.url", "http://localhost:28080")
             put("ktor.characterServer.url", "http://localhost:28081")

@@ -32,11 +32,8 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
-include(":composeApp")
-include(":server")
 include(":account-server")
 include(":character-server")
 include(":zone-server")
-include(":db-viewer-server")
 include(":game-client")
 include(":shared")

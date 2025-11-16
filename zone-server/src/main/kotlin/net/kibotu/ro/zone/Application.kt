@@ -11,11 +11,14 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.websocket.*
 import kotlinx.serialization.json.Json
+import net.kibotu.ro.zone.routes.adminRoutes
 import net.kibotu.ro.zone.routes.zoneRoutes
+import net.kibotu.ro.zone.service.AdminService
 import net.kibotu.ro.zone.service.CharacterValidationService
 import net.kibotu.ro.zone.service.SessionValidationService
 import net.kibotu.ro.zone.service.ZoneService
 import net.kibotu.ro.zone.websocket.WebSocketHandler
+import io.ktor.http.*
 
 private fun loadConfigFromFile(): ApplicationConfig {
     return try {
@@ -44,8 +47,25 @@ fun main() {
     val host = System.getenv("HOST") ?: "0.0.0.0"
     
     try {
-        embeddedServer(Netty, port = port, host = host, module = Application::module)
-            .start(wait = true)
+        val server = embeddedServer(Netty, port = port, host = host, module = Application::module)
+        server.start(wait = false)
+        
+        val adminUrl = if (host == "0.0.0.0") {
+            "http://localhost:$port/admin"
+        } else {
+            "http://$host:$port/admin"
+        }
+        
+        println("")
+        println("=".repeat(70))
+        println("Zone Server started successfully!")
+        println("=".repeat(70))
+        println("Server URL: http://$host:$port")
+        println("Admin Panel: $adminUrl")
+        println("=".repeat(70))
+        println("")
+        
+        Thread.currentThread().join()
     } catch (e: java.net.BindException) {
         System.err.println("ERROR: Port $port is already in use.")
         System.err.println("")
@@ -71,6 +91,7 @@ fun Application.module() {
     val sessionValidationService = SessionValidationService(accountServerUrl)
     val characterValidationService = CharacterValidationService(characterServerUrl)
     val zoneService = ZoneService(sessionValidationService, characterValidationService)
+    val adminService = AdminService(zoneService)
     val webSocketHandler = WebSocketHandler(zoneService)
     
     // Configure content negotiation
@@ -91,7 +112,16 @@ fun Application.module() {
             call.respondText("Ragnarok Zone Server - Running")
         }
         
+        // Admin panel - serve HTML file
+        get("/admin") {
+            val htmlContent = Application::class.java.classLoader.getResourceAsStream("admin/index.html")
+                ?.bufferedReader()?.readText()
+                ?: throw Exception("Admin HTML file not found")
+            call.respondText(htmlContent, ContentType.Text.Html)
+        }
+        
         zoneRoutes(zoneService)
+        adminRoutes(adminService)
         webSocketHandler.setupRoutes(this)
     }
 }

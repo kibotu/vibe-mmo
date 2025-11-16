@@ -13,6 +13,13 @@ class ZoneService(
     private val zoneInstances = ConcurrentHashMap<String, ZoneInstance>()
     private val mutex = Mutex()
     
+    /**
+     * Get all zone instances (for admin purposes)
+     */
+    fun getAllZoneInstances(): List<ZoneInstance> {
+        return zoneInstances.values.toList()
+    }
+    
     init {
         // Initialize default zones
         initializeDefaultZones()

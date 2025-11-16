@@ -24,12 +24,34 @@ class AdminService {
     fun getAllSessions(): List<SessionInfo> {
         return transaction {
             Session.all().map { session ->
+                // Get account email (owner)
+                val account = Account.findById(session.accountId)
+                val ownerEmail = account?.email ?: "Unknown"
+                
+                // Calculate session duration
+                val now = Instant.now()
+                val durationMillis = if (session.isExpired()) {
+                    session.expiresAt.toEpochMilli() - session.createdAt.toEpochMilli()
+                } else {
+                    now.toEpochMilli() - session.createdAt.toEpochMilli()
+                }
+                val durationHours = durationMillis / (1000 * 60 * 60.0)
+                val durationMinutes = (durationMillis % (1000 * 60 * 60)) / (1000 * 60.0)
+                
+                val durationString = when {
+                    durationHours >= 24 -> "${(durationHours / 24).toInt()}d ${(durationHours % 24).toInt()}h"
+                    durationHours >= 1 -> "${durationHours.toInt()}h ${durationMinutes.toInt()}m"
+                    else -> "${durationMinutes.toInt()}m"
+                }
+                
                 SessionInfo(
                     id = session.id.value.toString(),
                     accountId = session.accountId.toString(),
+                    ownerEmail = ownerEmail,
                     token = session.token.take(20) + "...", // Truncate token for display
                     createdAt = session.createdAt.toString(),
                     expiresAt = session.expiresAt.toString(),
+                    duration = durationString,
                     isActive = session.isActive,
                     isExpired = session.isExpired()
                 )
@@ -131,9 +153,11 @@ class AdminService {
 data class SessionInfo(
     val id: String,
     val accountId: String,
+    val ownerEmail: String,
     val token: String,
     val createdAt: String,
     val expiresAt: String,
+    val duration: String,
     val isActive: Boolean,
     val isExpired: Boolean
 )

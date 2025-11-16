@@ -11,9 +11,12 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.json.Json
 import net.kibotu.ro.character.database.DatabaseFactory
+import net.kibotu.ro.character.routes.adminRoutes
 import net.kibotu.ro.character.routes.characterRoutes
+import net.kibotu.ro.character.service.AdminService
 import net.kibotu.ro.character.service.CharacterService
 import net.kibotu.ro.character.service.SessionValidationService
+import io.ktor.http.*
 
 private fun loadConfigFromFile(): ApplicationConfig {
     return try {
@@ -48,8 +51,25 @@ fun main() {
     val host = System.getenv("HOST") ?: "0.0.0.0"
     
     try {
-        embeddedServer(Netty, port = port, host = host, module = Application::module)
-            .start(wait = true)
+        val server = embeddedServer(Netty, port = port, host = host, module = Application::module)
+        server.start(wait = false)
+        
+        val adminUrl = if (host == "0.0.0.0") {
+            "http://localhost:$port/admin"
+        } else {
+            "http://$host:$port/admin"
+        }
+        
+        println("")
+        println("=".repeat(70))
+        println("Character Server started successfully!")
+        println("=".repeat(70))
+        println("Server URL: http://$host:$port")
+        println("Admin Panel: $adminUrl")
+        println("=".repeat(70))
+        println("")
+        
+        Thread.currentThread().join()
     } catch (e: java.net.BindException) {
         System.err.println("ERROR: Port $port is already in use.")
         System.err.println("")
@@ -76,6 +96,7 @@ fun Application.module() {
     // Initialize services
     val sessionValidationService = SessionValidationService(accountServerUrl)
     val characterService = CharacterService(sessionValidationService)
+    val adminService = AdminService()
     
     // Configure content negotiation
     install(ContentNegotiation) {
@@ -92,7 +113,16 @@ fun Application.module() {
             call.respondText("Ragnarok Character Server - Running")
         }
         
+        // Admin panel - serve HTML file
+        get("/admin") {
+            val htmlContent = Application::class.java.classLoader.getResourceAsStream("admin/index.html")
+                ?.bufferedReader()?.readText()
+                ?: throw Exception("Admin HTML file not found")
+            call.respondText(htmlContent, ContentType.Text.Html)
+        }
+        
         characterRoutes(characterService)
+        adminRoutes(adminService)
     }
 }
 

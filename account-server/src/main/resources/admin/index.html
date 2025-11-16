@@ -509,9 +509,10 @@
                     <table id="sessionsTable" style="display: none;">
                         <thead>
                             <tr>
-                                <th>Account ID</th>
+                                <th>Owner</th>
                                 <th>Token</th>
                                 <th>Status</th>
+                                <th>Duration</th>
                                 <th>Expires</th>
                                 <th>Actions</th>
                             </tr>
@@ -570,15 +571,20 @@
                     }
                 });
                 
+                // Read response body once
+                const data = await response.json().catch(() => {
+                    // If JSON parsing fails, return a basic error object
+                    return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
+                });
+                
                 if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+                    throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`);
                 }
                 
-                const data = await response.json();
                 if (!data.success) {
                     throw new Error(data.error || 'Delete failed');
                 }
+                
                 return data;
             } catch (error) {
                 console.error('Delete Error:', error);
@@ -650,10 +656,10 @@
                             <td class="timestamp">${formatShortDate(account.lastLogin)}</td>
                             <td>
                                 <div class="action-buttons">
-                                    <button class="btn btn-danger" onclick="deleteAccount('${escapeHtml(account.id)}', '${escapeHtml(account.email)}')" title="Delete account">
+                                    <button class="btn btn-danger" onclick="deleteAccount('${escapeHtml(account.id)}', '${escapeHtml(account.email)}', event)" title="Delete account">
                                         🗑️ Delete
                                     </button>
-                                    <button class="btn btn-warning" onclick="invalidateAccountSessions('${escapeHtml(account.id)}', '${escapeHtml(account.email)}')" title="Invalidate all sessions">
+                                    <button class="btn btn-warning" onclick="invalidateAccountSessions('${escapeHtml(account.id)}', '${escapeHtml(account.email)}', event)" title="Invalidate all sessions">
                                         🔒 Invalidate Sessions
                                     </button>
                                 </div>
@@ -688,7 +694,7 @@
                 loadingEl.style.display = 'none';
                 
                 if (sessions.length === 0) {
-                    bodyEl.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">📭</div><div>No sessions found</div></div></td></tr>';
+                    bodyEl.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-state-icon">📭</div><div>No sessions found</div></div></td></tr>';
                     tableEl.style.display = 'table';
                 } else {
                     tableEl.style.display = 'table';
@@ -704,12 +710,13 @@
                         
                         return `
                             <tr>
-                                <td class="token-cell">${escapeHtml(session.accountId.substring(0, 8))}...</td>
+                                <td><strong>${escapeHtml(session.ownerEmail)}</strong></td>
                                 <td class="token-cell">${escapeHtml(session.token)}</td>
                                 <td>${statusBadge}</td>
+                                <td class="timestamp">${escapeHtml(session.duration)}</td>
                                 <td class="timestamp">${formatShortDate(session.expiresAt)}</td>
                                 <td>
-                                    ${session.isActive ? `<button class="btn btn-warning" onclick="invalidateSession('${escapeHtml(session.id)}')" title="Invalidate session">🔒 Invalidate</button>` : '<span class="timestamp">-</span>'}
+                                    ${session.isActive ? `<button class="btn btn-warning" onclick="invalidateSession('${escapeHtml(session.id)}', event)" title="Invalidate session">🔒 Invalidate</button>` : '<span class="timestamp">-</span>'}
                                 </td>
                             </tr>
                         `;
@@ -730,18 +737,23 @@
             return div.innerHTML;
         }
         
-        async function deleteAccount(accountId, email) {
+        async function deleteAccount(accountId, email, event) {
             if (!confirm(`⚠️ Are you sure you want to delete the account "${email}"?\n\nThis will permanently delete the account and all associated sessions. This action cannot be undone.`)) {
                 return;
             }
             
-            const button = event.target.closest('.btn');
+            const button = event ? event.target.closest('.btn') : document.querySelector(`button[onclick*="${accountId}"]`);
+            if (!button) {
+                showToast('Could not find button element', 'error');
+                return;
+            }
+            
             const originalText = button.innerHTML;
             button.disabled = true;
             button.innerHTML = '<span class="spinner"></span> Deleting...';
             
             try {
-                await deleteAPI(`/accounts/${accountId}`);
+                const result = await deleteAPI(`/accounts/${accountId}`);
                 showToast(`Account "${email}" deleted successfully`, 'success');
                 await Promise.all([loadAccounts(), loadStatistics(), loadSessions()]);
             } catch (error) {
@@ -751,18 +763,23 @@
             }
         }
         
-        async function invalidateSession(sessionId) {
+        async function invalidateSession(sessionId, event) {
             if (!confirm('⚠️ Are you sure you want to invalidate this session?\n\nThe user will be logged out immediately.')) {
                 return;
             }
             
-            const button = event.target.closest('.btn');
+            const button = event ? event.target.closest('.btn') : document.querySelector(`button[onclick*="${sessionId}"]`);
+            if (!button) {
+                showToast('Could not find button element', 'error');
+                return;
+            }
+            
             const originalText = button.innerHTML;
             button.disabled = true;
             button.innerHTML = '<span class="spinner"></span> Invalidating...';
             
             try {
-                await deleteAPI(`/sessions/${sessionId}`);
+                const result = await deleteAPI(`/sessions/${sessionId}`);
                 showToast('Session invalidated successfully', 'success');
                 await Promise.all([loadSessions(), loadStatistics()]);
             } catch (error) {
@@ -772,12 +789,17 @@
             }
         }
         
-        async function invalidateAccountSessions(accountId, email) {
+        async function invalidateAccountSessions(accountId, email, event) {
             if (!confirm(`⚠️ Are you sure you want to invalidate all sessions for "${email}"?\n\nThis will log out the user from all devices immediately.`)) {
                 return;
             }
             
-            const button = event.target.closest('.btn');
+            const button = event ? event.target.closest('.btn') : document.querySelector(`button[onclick*="${accountId}"]`);
+            if (!button) {
+                showToast('Could not find button element', 'error');
+                return;
+            }
+            
             const originalText = button.innerHTML;
             button.disabled = true;
             button.innerHTML = '<span class="spinner"></span> Invalidating...';

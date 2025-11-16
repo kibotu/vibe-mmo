@@ -48,6 +48,7 @@ class AccountService(
     
     /**
      * Login and create a session
+     * Automatically invalidates all other sessions for this account to ensure single-session login
      */
     fun login(email: String, password: String): LoginResult {
         return transaction {
@@ -61,6 +62,12 @@ class AccountService(
                 return@transaction LoginResult.Error("Invalid credentials")
             }
             
+            // Invalidate all existing sessions for this account (single-session enforcement)
+            val existingSessions = Session.find { Sessions.accountId eq account.id.value }
+            existingSessions.forEach { session ->
+                session.isActive = false
+            }
+            
             // Update last login
             account.lastLogin = Instant.now()
             
@@ -68,7 +75,7 @@ class AccountService(
             val token = jwtService.generateToken(account.id.value.toString())
             val expiresAt = jwtService.getExpirationTime()
             
-            // Create session record
+            // Create new session record
             val session = Session.new {
                 this.accountId = account.id.value
                 this.token = token

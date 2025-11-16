@@ -90,21 +90,29 @@ class WebSocketHandler(
             val instanceConnections = connections.getOrPut(instanceId) { ConcurrentHashMap() }
             instanceConnections[characterId] = this
             
+            println("[ZoneServer] WebSocket connected: player ${player.name} ($characterId) joined zone instance $instanceId at position (${player.position.x}, ${player.position.y})")
+            
             try {
                 // Send initial zone state
+                println("[ZoneServer] Sending initial zone state to ${player.name}")
                 sendZoneState(this, zoneInstance, player)
                 
                 // Broadcast player joined to others
                 broadcastPlayerJoined(zoneInstance, player, characterId)
                 
                 // Handle incoming messages
+                println("[ZoneServer] Starting message loop for ${player.name}")
                 for (frame in incoming) {
                     if (frame is Frame.Text) {
                         handleMessage(this, frame.readText(), zoneInstance, player, characterId)
+                    } else if (frame is Frame.Close) {
+                        println("[ZoneServer] Received close frame from $characterId")
+                        break
                     }
                 }
             } catch (e: Exception) {
-                // Connection closed or error
+                println("[ZoneServer] Exception in WebSocket handler for $characterId: ${e.message}")
+                e.printStackTrace()
             } finally {
                 // Cleanup
                 instanceConnections.remove(characterId)
@@ -157,31 +165,64 @@ class WebSocketHandler(
         characterId: String
     ) {
         try {
+            println("[ZoneServer] Received message from $characterId: $text")
             val message = json.decodeFromString(ClientMessage.serializer(), text)
             
             when (message) {
                 is ClientMessage.Move -> {
+                    // Get fresh player reference to ensure we have latest state
+                    val currentPlayer = zoneInstance.getPlayer(characterId)
+                    if (currentPlayer == null) {
+                        println("[ZoneServer] ERROR: Player $characterId not found in zone")
+                        session.sendMessage(ServerMessage.Error("Player not found in zone"))
+                        return
+                    }
+                    
+                    val oldPosition = currentPlayer.position
+                    println("[ZoneServer] Movement request from ${currentPlayer.name} ($characterId): ${oldPosition} -> ${message.position} (direction: ${message.direction})")
+                    
                     // Validate and update position
                     val success = zoneInstance.updatePlayerPosition(
-                        player.characterId,
+                        characterId,
                         message.position,
                         message.direction
                     )
                     
                     if (success) {
-                        // Broadcast movement to all other players
-                        broadcastMovement(zoneInstance, player, message.position, message.direction, characterId)
+                        // Get updated player to ensure we have the latest position
+                        val updatedPlayer = zoneInstance.getPlayer(characterId)
+                        if (updatedPlayer != null) {
+                            println("[ZoneServer] Movement successful: ${updatedPlayer.name} moved to (${updatedPlayer.position.x}, ${updatedPlayer.position.y})")
+                            
+                            // Send movement confirmation back to the sender
+                            val movementMessage = ServerMessage.Movement(
+                                characterId = updatedPlayer.characterId,
+                                position = updatedPlayer.position,
+                                direction = updatedPlayer.direction
+                            )
+                            session.sendMessage(movementMessage)
+                            
+                            // Broadcast movement to all other players
+                            broadcastMovement(zoneInstance, updatedPlayer, updatedPlayer.position, updatedPlayer.direction, characterId)
+                        } else {
+                            println("[ZoneServer] ERROR: Updated player not found after successful movement")
+                        }
                     } else {
-                        // Send error or reject movement
-                        session.sendMessage(ServerMessage.Error("Invalid movement"))
+                        println("[ZoneServer] Movement REJECTED: Invalid position (${message.position.x}, ${message.position.y}) for player $characterId")
+                        // Send error or reject movement - client should revert optimistic update
+                        session.sendMessage(ServerMessage.Error("Invalid movement: position out of bounds or invalid"))
                     }
                 }
                 is ClientMessage.Chat -> {
+                    // Get fresh player reference
+                    val currentPlayer = zoneInstance.getPlayer(characterId) ?: player
                     // Broadcast chat message
-                    broadcastChat(zoneInstance, player, message.message, characterId)
+                    broadcastChat(zoneInstance, currentPlayer, message.message, characterId)
                 }
             }
         } catch (e: Exception) {
+            println("[ZoneServer] ERROR processing message from $characterId: ${e.message}")
+            e.printStackTrace()
             session.sendMessage(ServerMessage.Error("Invalid message format: ${e.message}"))
         }
     }

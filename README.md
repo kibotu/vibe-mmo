@@ -47,11 +47,19 @@ The easiest way to get started is using the provided scripts:
 
 3. **Start additional zone servers:**
    ```powershell
-   # Start a zone server on a custom port (e.g., 28083)
-   .\start-zone-server.bat 28083
+   # Start a zone server on a custom port (e.g., 28084)
+   .\start-zone-server.bat 28084
    ```
 
-4. **Stop all servers:**
+4. **Start Database Viewer (optional):**
+   ```powershell
+   # Double-click start-db-viewer.bat or run:
+   .\start-db-viewer.bat
+   ```
+   This will start the Database Viewer Server on port 28083, providing a web interface to view all server databases.
+   **Note:** For the database viewer to work, you need to configure file-based databases (see Database Viewer section below).
+
+5. **Stop all servers:**
    - Press `Ctrl+C` in the main server window, or
    - Run `.\stop-servers.bat` to manually stop all servers
 
@@ -112,7 +120,8 @@ Start each server in its own terminal (or backgrounded tasks), then launch the c
 All servers listen on their default ports:
 - **Account Server**: Port 28080 (single instance only)
 - **Character Server**: Port 28081 (single instance only)
-- **Zone Server**: Port 28082 (multiple instances allowed, use `PORT=28083` env var for additional instances)
+- **Zone Server**: Port 28082 (multiple instances allowed, use `PORT=28084` env var for additional instances)
+- **Database Viewer Server**: Port 28083 (optional, for viewing databases)
 
 **Note:** Account and Character servers enforce single-instance restrictions. Zone servers and clients can run multiple instances.
 
@@ -252,6 +261,67 @@ If you see errors related to multiplatform targets:
 ./gradlew clean --refresh-dependencies
 ```
 
+## Database Viewer
+
+The **Database Viewer Server** provides a web-based interface to view and inspect the databases from all servers.
+
+### Starting the Database Viewer
+
+```powershell
+.\start-db-viewer.bat
+```
+
+Then open your browser to: **http://localhost:28083**
+
+### Configuration
+
+**Important:** The Database Viewer needs to connect to the same databases as the servers. For in-memory databases, this won't work across different processes. You need to configure file-based databases:
+
+1. **Update Account Server** (`account-server/src/main/resources/application.conf`):
+   ```hocon
+   database {
+       driver = "org.h2.Driver"
+       url = "jdbc:h2:file:./data/accountdb;AUTO_SERVER=TRUE;MODE=PostgreSQL"
+       user = "sa"
+       password = ""
+   }
+   ```
+
+2. **Update Character Server** (`character-server/src/main/resources/application.conf`):
+   ```hocon
+   database {
+       driver = "org.h2.Driver"
+       url = "jdbc:h2:file:./data/characterdb;AUTO_SERVER=TRUE;MODE=PostgreSQL"
+       user = "sa"
+       password = ""
+   }
+   ```
+
+3. **Update Database Viewer** (`db-viewer-server/src/main/resources/application.conf`):
+   ```hocon
+   databases {
+       account {
+           driver = "org.h2.Driver"
+           url = "jdbc:h2:file:./data/accountdb;AUTO_SERVER=TRUE;MODE=PostgreSQL"
+           user = "sa"
+           password = ""
+       }
+       character {
+           driver = "org.h2.Driver"
+           url = "jdbc:h2:file:./data/characterdb;AUTO_SERVER=TRUE;MODE=PostgreSQL"
+           user = "sa"
+           password = ""
+       }
+   }
+   ```
+
+The Database Viewer provides:
+- Real-time statistics (accounts, sessions, characters)
+- View all accounts with creation dates
+- View all active sessions
+- View all characters
+- Zone server status
+
 ## Documentation
 
 All technical specs are in the `docs/` folder:
@@ -260,6 +330,7 @@ All technical specs are in the `docs/` folder:
 - `CharacterCreationServerSpec.md`
 - `ZoneServerSpec.md`
 - `GameClientSpec.md`
+- `DATABASE_DEBUGGING.md` - Guide for debugging database issues
 
 These documents detail the data models, endpoints, auth flow, and wiring instructions.
 

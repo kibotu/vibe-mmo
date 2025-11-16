@@ -39,7 +39,8 @@ class ZoneWebSocketClient {
     private val _messages = MutableStateFlow<ServerMessage?>(null)
     val messages: StateFlow<ServerMessage?> = _messages.asStateFlow()
     
-    private var receiveJob: Job? = null
+    private var connectionJob: Job? = null
+    private val connectionScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     
     suspend fun connect(
         url: String,
@@ -66,37 +67,70 @@ class ZoneWebSocketClient {
                 else if (protocol == "wss") 443 else 80
             val path = "/" + withoutProtocol.substringAfter("/", "")
             
-            wsClient.webSocket(
-                method = HttpMethod.Get,
-                host = host,
-                port = port,
-                path = path,
-                request = {
-                    header("Authorization", "Bearer $sessionToken")
-                    header("Character-Id", characterId)
-                }
-            ) {
-                session = this
-                
-                // Start receiving messages
-                receiveJob = CoroutineScope(Dispatchers.Default).launch {
-                    try {
-                        for (frame in incoming) {
-                            if (frame is Frame.Text) {
-                                val text = frame.readText()
-                                try {
-                                    val message = json.decodeFromString(ServerMessage.serializer(), text)
-                                    _messages.value = message
-                                } catch (e: Exception) {
-                                    // Handle deserialization error
-                                    println("Failed to deserialize message: $text, error: ${e.message}")
+            // Launch WebSocket connection in background coroutine
+            connectionJob = connectionScope.launch {
+                try {
+                    wsClient.webSocket(
+                        method = HttpMethod.Get,
+                        host = host,
+                        port = port,
+                        path = path,
+                        request = {
+                            header("Authorization", "Bearer $sessionToken")
+                            header("Character-Id", characterId)
+                        }
+                    ) {
+                        session = this
+                        println("WebSocket connection established")
+                        
+                        // Start receiving messages
+                        try {
+                            for (frame in incoming) {
+                                if (frame is Frame.Text) {
+                                    val text = frame.readText()
+                                    try {
+                                        val message = json.decodeFromString(ServerMessage.serializer(), text)
+                                        _messages.value = message
+                                    } catch (e: Exception) {
+                                        // Handle deserialization error
+                                        println("Failed to deserialize message: $text, error: ${e.message}")
+                                    }
+                                } else if (frame is Frame.Close) {
+                                    println("WebSocket received close frame")
+                                    break
                                 }
                             }
+                        } catch (e: CancellationException) {
+                            println("WebSocket receive cancelled: ${e.message}")
+                            throw e
+                        } catch (e: Exception) {
+                            println("WebSocket receive error: ${e.message}")
+                        } finally {
+                            println("WebSocket receive loop ended")
+                            // Clear session when receive loop ends
+                            session = null
                         }
-                    } catch (e: Exception) {
-                        println("WebSocket receive error: ${e.message}")
                     }
+                } catch (e: CancellationException) {
+                    println("WebSocket connection cancelled: ${e.message}")
+                    session = null
+                    throw e
+                } catch (e: Exception) {
+                    println("WebSocket connection error: ${e.message}")
+                    session = null
+                } finally {
+                    println("WebSocket connection closed")
+                    session = null
                 }
+            }
+            
+            // Wait a bit to ensure connection is established
+            delay(100)
+            
+            // Check if connection was established
+            if (session == null) {
+                connectionJob?.cancel()
+                return Result.failure(Exception("Failed to establish WebSocket connection"))
             }
             
             Result.success(Unit)
@@ -106,34 +140,70 @@ class ZoneWebSocketClient {
     }
     
     suspend fun sendMove(direction: String, position: Position) {
-        val currentSession = session ?: return
+        val currentSession = session
+        if (currentSession == null) {
+            println("Failed to send move message: WebSocket session is null")
+            return
+        }
+        
         try {
             val message = ClientMessage.Move(direction, position)
             val jsonString = json.encodeToString(ClientMessage.serializer(), message)
             currentSession.send(Frame.Text(jsonString))
+        } catch (e: CancellationException) {
+            println("Failed to send move message: Channel was cancelled")
+            session = null
         } catch (e: Exception) {
             println("Failed to send move message: ${e.message}")
+            // If send fails, the connection might be dead
+            if (e.message?.contains("cancelled", ignoreCase = true) == true ||
+                e.message?.contains("closed", ignoreCase = true) == true) {
+                session = null
+            }
         }
     }
     
     suspend fun sendChat(message: String) {
-        val currentSession = session ?: return
+        val currentSession = session
+        if (currentSession == null) {
+            println("Failed to send chat message: WebSocket session is null")
+            return
+        }
+        
         try {
             val chatMessage = ClientMessage.Chat(message)
             val jsonString = json.encodeToString(ClientMessage.serializer(), chatMessage)
             currentSession.send(Frame.Text(jsonString))
+        } catch (e: CancellationException) {
+            println("Failed to send chat message: Channel was cancelled")
+            session = null
         } catch (e: Exception) {
             println("Failed to send chat message: ${e.message}")
+            // If send fails, the connection might be dead
+            if (e.message?.contains("cancelled", ignoreCase = true) == true ||
+                e.message?.contains("closed", ignoreCase = true) == true) {
+                session = null
+            }
         }
     }
     
     suspend fun disconnect() {
-        receiveJob?.cancel()
-        session?.close()
+        println("Disconnecting WebSocket...")
+        connectionJob?.cancel()
+        try {
+            session?.close()
+        } catch (e: Exception) {
+            println("Error closing session: ${e.message}")
+        }
         session = null
-        client?.close()
+        try {
+            client?.close()
+        } catch (e: Exception) {
+            println("Error closing client: ${e.message}")
+        }
         client = null
         _messages.value = null
+        println("WebSocket disconnected")
     }
 }
 

@@ -1,6 +1,7 @@
 package net.kibotu.ro.client.state
 
 import net.kibotu.ro.client.model.*
+import net.kibotu.ro.client.util.LogEntry
 
 sealed class Screen {
     object Login : Screen()
@@ -22,6 +23,8 @@ data class AppState(
     val players: Map<String, PlayerDTO> = emptyMap(),
     val npcs: Map<String, NPCDTO> = emptyMap(),
     val monsters: Map<String, MonsterDTO> = emptyMap(),
-    val chatMessages: List<String> = emptyList()
+    val chatMessages: List<String> = emptyList(),
+    // Terminal logs
+    val logs: List<LogEntry> = emptyList()
 )
 

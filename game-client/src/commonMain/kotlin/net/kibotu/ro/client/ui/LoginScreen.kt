@@ -25,7 +25,7 @@ fun LoginScreen(viewModel: GameViewModel) {
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
     
-    // Load saved credentials on first composition
+    // Load saved credentials on first composition (but don't auto-login)
     LaunchedEffect(Unit) {
         val savedEmail = viewModel.getSavedEmail()
         val savedPassword = viewModel.getSavedPassword()
@@ -33,10 +33,7 @@ fun LoginScreen(viewModel: GameViewModel) {
             email = savedEmail
             password = savedPassword
             rememberMe = true
-            // Auto-login if credentials are available
-            scope.launch {
-                viewModel.login(savedEmail, savedPassword)
-            }
+            // Don't auto-login - always show login page for each client process
         }
     }
     

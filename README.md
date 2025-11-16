@@ -65,6 +65,121 @@ All servers listen on their default ports (see the individual module readmes).  
 
 You can also run *module‑specific* tests: `./gradlew :account-server:test`.
 
+## Troubleshooting
+
+### Build Issues
+
+#### "Unable to delete directory" / File Locked Error (Windows)
+
+If you encounter errors like:
+```
+Unable to delete directory 'shared\build'
+Failed to delete some children. This might happen because a process has files open
+```
+
+**Solutions:**
+1. **Stop Gradle daemons:**
+   ```bash
+   ./gradlew --stop
+   ```
+
+2. **Close IDEs/editors:** Close Cursor, IntelliJ IDEA, or any IDE that has the project folder open.
+
+3. **Close File Explorer:** If Windows Explorer has the `build` folder open, close it.
+
+4. **Manual cleanup (PowerShell):**
+   ```powershell
+   Remove-Item -Path "shared\build" -Recurse -Force
+   ```
+
+5. **Workaround:** Skip the clean task if you just need to build:
+   ```bash
+   ./gradlew build  # Instead of clean build
+   ```
+
+#### Port Already in Use
+
+If a server fails to start with a port conflict error:
+
+```bash
+# Windows - Find process using port (e.g., 8080)
+netstat -ano | findstr :8080
+
+# Kill the process (replace PID with actual process ID)
+taskkill /PID <PID> /F
+
+# Linux/Mac - Find and kill process
+lsof -ti:8080 | xargs kill -9
+```
+
+#### Gradle Daemon Issues
+
+If builds hang or behave unexpectedly:
+
+```bash
+# Stop all daemons
+./gradlew --stop
+
+# Check daemon status
+./gradlew --status
+
+# Run without daemon (one-time)
+./gradlew --no-daemon build
+```
+
+#### Build Cache Corruption
+
+If you encounter strange build errors:
+
+```bash
+# Clear Gradle cache
+./gradlew clean --refresh-dependencies
+
+# Or manually delete cache (Windows)
+Remove-Item -Path "$env:USERPROFILE\.gradle\caches" -Recurse -Force
+
+# Linux/Mac
+rm -rf ~/.gradle/caches
+```
+
+### Runtime Issues
+
+#### Server Won't Start
+
+1. **Check logs:** Look for error messages in the console output.
+2. **Verify ports:** Ensure ports aren't already in use (see above).
+3. **Check configuration:** Verify `application.conf` files are correct.
+4. **Database connection:** If using PostgreSQL, ensure the database is running and credentials are correct.
+
+#### Client Can't Connect to Servers
+
+1. **Verify servers are running:** Check all three servers are started.
+2. **Check ports:** Ensure servers are listening on expected ports (defaults in `application.conf`).
+3. **Firewall:** Ensure firewall isn't blocking local connections.
+4. **WebSocket issues:** Check `ENV_WS_HOST` environment variable if using custom host.
+
+### Development Issues
+
+#### Kotlin Multiplatform Build Errors
+
+If you see errors related to multiplatform targets:
+
+```bash
+# Clean and rebuild
+./gradlew clean
+./gradlew build --refresh-dependencies
+```
+
+#### Dependency Resolution Issues
+
+```bash
+# Refresh dependencies
+./gradlew --refresh-dependencies build
+
+# Clear dependency cache
+./gradlew clean --refresh-dependencies
+```
+
 ## Documentation
 
 All technical specs are in the `docs/` folder:

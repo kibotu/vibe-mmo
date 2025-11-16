@@ -9,6 +9,11 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 import net.kibotu.ro.client.model.*
 
+/**
+ * Exception thrown when session is invalid (401 Unauthorized)
+ */
+class SessionInvalidException(message: String) : Exception(message)
+
 class CharacterClient(
     private val baseUrl: String = "http://localhost:28081"
 ) {
@@ -28,6 +33,11 @@ class CharacterClient(
                 header("Authorization", "Bearer $sessionToken")
             }
             
+            // Check for 401 Unauthorized (invalid session)
+            if (response.status == HttpStatusCode.Unauthorized) {
+                return Result.failure(SessionInvalidException("Session expired or invalid"))
+            }
+            
             val apiResponse = response.body<ApiResponse<CharacterListResponse>>()
             
             if (response.status.isSuccess() && apiResponse.success && apiResponse.data != null) {
@@ -36,7 +46,11 @@ class CharacterClient(
                 Result.failure(Exception(apiResponse.error ?: "Failed to list characters"))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("Failed to list characters: ${e.message ?: e.toString()}"))
+            if (e is SessionInvalidException) {
+                Result.failure(e)
+            } else {
+                Result.failure(Exception("Failed to list characters: ${e.message ?: e.toString()}"))
+            }
         }
     }
     
@@ -48,6 +62,11 @@ class CharacterClient(
                 setBody(CreateCharacterRequest(name))
             }
             
+            // Check for 401 Unauthorized (invalid session)
+            if (response.status == HttpStatusCode.Unauthorized) {
+                return Result.failure(SessionInvalidException("Session expired or invalid"))
+            }
+            
             val apiResponse = response.body<ApiResponse<CharacterResponse>>()
             
             if (response.status.isSuccess() && apiResponse.success && apiResponse.data != null) {
@@ -56,7 +75,11 @@ class CharacterClient(
                 Result.failure(Exception(apiResponse.error ?: "Failed to create character"))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("Failed to create character: ${e.message ?: e.toString()}"))
+            if (e is SessionInvalidException) {
+                Result.failure(e)
+            } else {
+                Result.failure(Exception("Failed to create character: ${e.message ?: e.toString()}"))
+            }
         }
     }
     
@@ -64,6 +87,11 @@ class CharacterClient(
         return try {
             val response = client.get("$baseUrl/api/character/$characterId") {
                 header("Authorization", "Bearer $sessionToken")
+            }
+            
+            // Check for 401 Unauthorized (invalid session)
+            if (response.status == HttpStatusCode.Unauthorized) {
+                return Result.failure(SessionInvalidException("Session expired or invalid"))
             }
             
             val apiResponse = response.body<ApiResponse<CharacterResponse>>()
@@ -74,7 +102,11 @@ class CharacterClient(
                 Result.failure(Exception(apiResponse.error ?: "Character not found"))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("Failed to get character: ${e.message ?: e.toString()}"))
+            if (e is SessionInvalidException) {
+                Result.failure(e)
+            } else {
+                Result.failure(Exception("Failed to get character: ${e.message ?: e.toString()}"))
+            }
         }
     }
     

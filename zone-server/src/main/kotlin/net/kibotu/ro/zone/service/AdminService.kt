@@ -2,11 +2,13 @@ package net.kibotu.ro.zone.service
 
 import kotlinx.serialization.Serializable
 import net.kibotu.ro.zone.model.ZoneInstance
+import net.kibotu.ro.zone.websocket.WebSocketHandler
 import java.time.Instant
 import java.util.*
 
 class AdminService(
-    private val zoneService: ZoneService
+    private val zoneService: ZoneService,
+    private val webSocketHandler: WebSocketHandler
 ) {
     /**
      * Get all zone instances
@@ -58,6 +60,9 @@ class AdminService(
      * Kick a player from a zone
      */
     suspend fun kickPlayer(instanceId: String, characterId: String): Boolean {
+        // Close the WebSocket connection first
+        webSocketHandler.closePlayerConnection(instanceId, characterId)
+        // Then remove the player from the zone
         return zoneService.leaveZone(instanceId, characterId)
     }
 }

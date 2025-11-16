@@ -129,11 +129,17 @@ class GameViewModel {
             }
             .onFailure { e ->
                 ClientLogger.error("Failed to load characters: ${e.message}", "Character")
-                _state.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = e.message ?: "Failed to load characters"
-                    )
+                // Check if session is invalid
+                if (e is SessionInvalidException) {
+                    ClientLogger.warn("Session invalid, redirecting to login", "Account")
+                    handleSessionInvalidation()
+                } else {
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = e.message ?: "Failed to load characters"
+                        )
+                    }
                 }
             }
     }
@@ -153,11 +159,17 @@ class GameViewModel {
                 }
             }
             .onFailure { e ->
-                _state.update { 
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = e.message ?: "Failed to create character"
-                    )
+                // Check if session is invalid
+                if (e is SessionInvalidException) {
+                    ClientLogger.warn("Session invalid, redirecting to login", "Account")
+                    handleSessionInvalidation()
+                } else {
+                    _state.update { 
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = e.message ?: "Failed to create character"
+                        )
+                    }
                 }
             }
     }
@@ -189,6 +201,12 @@ class GameViewModel {
                     updatePing(ping)
                 }
                 
+                // Set up disconnection callback
+                zoneWebSocketClient.setDisconnectionCallback {
+                    ClientLogger.warn("WebSocket disconnected", "WebSocket")
+                    handleWebSocketDisconnection()
+                }
+                
                 val wsResult = zoneWebSocketClient.connect(
                     response.websocketUrl,
                     token,
@@ -217,11 +235,17 @@ class GameViewModel {
             }
             .onFailure { e ->
                 ClientLogger.error("Failed to join zone: ${e.message}", "Zone")
-                _state.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = e.message ?: "Failed to join zone"
-                    )
+                // Check if session is invalid
+                if (e is SessionInvalidException) {
+                    ClientLogger.warn("Session invalid, redirecting to login", "Account")
+                    handleSessionInvalidation()
+                } else {
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = e.message ?: "Failed to join zone"
+                        )
+                    }
                 }
             }
     }
@@ -386,6 +410,49 @@ class GameViewModel {
     
     fun updatePing(ping: Long) {
         _state.update { it.copy(ping = ping) }
+    }
+    
+    /**
+     * Handle session invalidation - navigate back to login
+     */
+    private fun handleSessionInvalidation() {
+        scope.launch {
+            zoneWebSocketClient.disconnect()
+        }
+        _state.update {
+            it.copy(
+                currentScreen = Screen.Login,
+                sessionToken = null,
+                userId = null,
+                characters = emptyList(),
+                selectedCharacter = null,
+                zoneInstanceId = null,
+                playerPosition = null,
+                players = emptyMap(),
+                errorMessage = "Session expired. Please login again."
+            )
+        }
+    }
+    
+    /**
+     * Handle WebSocket disconnection - navigate back to character selection
+     */
+    fun handleWebSocketDisconnection() {
+        scope.launch {
+            zoneWebSocketClient.disconnect()
+        }
+        _state.update {
+            it.copy(
+                currentScreen = Screen.CharacterSelection,
+                zoneInstanceId = null,
+                playerPosition = null,
+                players = emptyMap(),
+                npcs = emptyMap(),
+                monsters = emptyMap(),
+                chatMessages = emptyList(),
+                errorMessage = "Disconnected from zone server"
+            )
+        }
     }
     
     fun cleanup() {

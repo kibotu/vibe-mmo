@@ -293,5 +293,24 @@ class WebSocketHandler(
         val text = json.encodeToString(ServerMessage.serializer(), message)
         send(Frame.Text(text))
     }
+    
+    /**
+     * Close a specific player's WebSocket connection (e.g., when kicked)
+     */
+    suspend fun closePlayerConnection(instanceId: String, characterId: String) {
+        val instanceConnections = connections[instanceId] ?: return
+        val session = instanceConnections[characterId] ?: return
+        
+        try {
+            session.close(CloseReason(CloseReason.Codes.GOING_AWAY, "Kicked from zone"))
+        } catch (e: Exception) {
+            // Connection might already be closed
+        } finally {
+            instanceConnections.remove(characterId)
+            if (instanceConnections.isEmpty()) {
+                connections.remove(instanceId)
+            }
+        }
+    }
 }
 

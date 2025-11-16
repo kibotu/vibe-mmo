@@ -30,6 +30,11 @@ class ZoneClient(
                 setBody(JoinZoneRequest(characterId, zoneName))
             }
             
+            // Check for 401 Unauthorized (invalid session)
+            if (response.status == HttpStatusCode.Unauthorized) {
+                return Result.failure(SessionInvalidException("Session expired or invalid"))
+            }
+            
             val apiResponse = response.body<ApiResponse<JoinZoneResponse>>()
             
             if (apiResponse.success && apiResponse.data != null) {

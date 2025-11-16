@@ -91,8 +91,8 @@ fun Application.module() {
     val sessionValidationService = SessionValidationService(accountServerUrl)
     val characterValidationService = CharacterValidationService(characterServerUrl)
     val zoneService = ZoneService(sessionValidationService, characterValidationService)
-    val adminService = AdminService(zoneService)
     val webSocketHandler = WebSocketHandler(zoneService)
+    val adminService = AdminService(zoneService, webSocketHandler)
     
     // Configure content negotiation
     install(ContentNegotiation) {

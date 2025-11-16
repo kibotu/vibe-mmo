@@ -48,8 +48,15 @@ class ZoneWebSocketClient {
     private var pingJob: Job? = null
     private var movementSendTime: Long = 0 // Track when movement was sent
     
+    // Disconnection callback
+    private var disconnectionCallback: (() -> Unit)? = null
+    
     fun setPingCallback(callback: (Long) -> Unit) {
         pingCallback = callback
+    }
+    
+    fun setDisconnectionCallback(callback: () -> Unit) {
+        disconnectionCallback = callback
     }
     
     suspend fun connect(
@@ -131,15 +138,19 @@ class ZoneWebSocketClient {
                                         lastPingTime = 0
                                     }
                                 } else if (frame is Frame.Close) {
+                                    // Connection closed by server (e.g., kicked)
+                                    disconnectionCallback?.invoke()
                                     break
                                 }
                             }
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            // Connection error - will be handled by caller
+                            // Connection error - will notify in finally block
                         } finally {
                             session = null
+                            // Notify about disconnection when connection closes
+                            disconnectionCallback?.invoke()
                         }
                     }
                 } catch (e: CancellationException) {
@@ -147,6 +158,7 @@ class ZoneWebSocketClient {
                     throw e
                 } catch (e: Exception) {
                     session = null
+                    disconnectionCallback?.invoke()
                 } finally {
                     session = null
                 }
@@ -206,6 +218,7 @@ class ZoneWebSocketClient {
         pingJob?.cancel()
         connectionJob?.cancel()
         pingCallback = null
+        disconnectionCallback = null
         try {
             session?.close()
         } catch (e: Exception) {

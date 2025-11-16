@@ -18,6 +18,7 @@ class AdminService(
         // For now, we'll need to add a method to ZoneService to expose instances
         return zoneService.getAllZoneInstances().map { instance ->
             val players = instance.getAllPlayers()
+            val npcs = instance.getNPCs()
             ZoneInstanceInfo(
                 id = instance.id,
                 zoneName = instance.zoneName,
@@ -30,7 +31,15 @@ class AdminService(
                         direction = player.direction
                     )
                 },
-                npcCount = instance.getNPCs().size,
+                npcCount = npcs.size,
+                npcs = npcs.map { npc ->
+                    NPCInfo(
+                        id = npc.id,
+                        name = npc.name,
+                        position = PositionInfo(npc.position.x, npc.position.y),
+                        type = npc.type
+                    )
+                },
                 monsterCount = instance.getAllMonsters().size
             )
         }
@@ -74,6 +83,7 @@ data class ZoneInstanceInfo(
     val playerCount: Int,
     val players: List<PlayerInfo>,
     val npcCount: Int,
+    val npcs: List<NPCInfo>,
     val monsterCount: Int
 )
 
@@ -89,6 +99,14 @@ data class PlayerInfo(
 data class PositionInfo(
     val x: Int,
     val y: Int
+)
+
+@Serializable
+data class NPCInfo(
+    val id: String,
+    val name: String,
+    val position: PositionInfo,
+    val type: String
 )
 
 @Serializable

@@ -431,6 +431,39 @@
             background: #dbeafe;
             color: #1e40af;
         }
+        
+        .badge-type {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .npc-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .npc-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .npc-name {
+            font-weight: 600;
+            color: var(--dark);
+        }
+        
+        .npc-position {
+            font-size: 12px;
+            color: #9ca3af;
+            font-family: 'Courier New', monospace;
+        }
     </style>
 </head>
 <body>
@@ -473,6 +506,19 @@
             <div id="zonesError"></div>
             <div id="zonesLoading" class="loading">Loading zones</div>
             <div id="zonesContainer" style="display: none;"></div>
+        </div>
+        
+        <div class="panel">
+            <h2>
+                <span>NPCs by Zone</span>
+                <button class="refresh-btn" onclick="loadNPCs()" id="npcsRefreshBtn">
+                    <span>🔄</span>
+                    <span>Refresh</span>
+                </button>
+            </h2>
+            <div id="npcsError"></div>
+            <div id="npcsLoading" class="loading">Loading NPCs</div>
+            <div id="npcsContainer" style="display: none;"></div>
         </div>
     </div>
     
@@ -626,6 +672,69 @@
             }
         }
         
+        async function loadNPCs() {
+            const loadingEl = document.getElementById('npcsLoading');
+            const containerEl = document.getElementById('npcsContainer');
+            const errorEl = document.getElementById('npcsError');
+            const refreshBtn = document.getElementById('npcsRefreshBtn');
+            
+            loadingEl.style.display = 'block';
+            containerEl.style.display = 'none';
+            errorEl.innerHTML = '';
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<span class="spinner"></span><span>Loading...</span>';
+            
+            try {
+                const zones = await fetchAPI('/zones');
+                loadingEl.style.display = 'none';
+                
+                if (zones.length === 0) {
+                    containerEl.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🤖</div><div>No active zones with NPCs</div></div>';
+                    containerEl.style.display = 'block';
+                } else {
+                    containerEl.innerHTML = zones.map(zone => {
+                        const npcsHtml = zone.npcs && zone.npcs.length > 0
+                            ? zone.npcs.map(npc => `
+                                <div class="npc-item">
+                                    <div class="npc-info">
+                                        <span class="npc-name">${escapeHtml(npc.name)}</span>
+                                        <span class="npc-position">(${npc.position.x}, ${npc.position.y})</span>
+                                        <span class="badge badge-type">${escapeHtml(npc.type)}</span>
+                                    </div>
+                                    <span style="font-size: 11px; color: #9ca3af; font-family: monospace;">${escapeHtml(npc.id)}</span>
+                                </div>
+                            `).join('')
+                            : '<div class="empty-state" style="padding: 20px;"><div>No NPCs in this zone</div></div>';
+                        
+                        return `
+                            <div class="zone-card">
+                                <div class="zone-header">
+                                    <div class="zone-name">${escapeHtml(zone.zoneName)}</div>
+                                    <div class="zone-stats">
+                                        <span>🤖 ${zone.npcCount || 0}</span>
+                                    </div>
+                                </div>
+                                <div style="font-size: 11px; color: #9ca3af; margin-bottom: 12px; font-family: monospace;">
+                                    Instance ID: ${escapeHtml(zone.id.substring(0, 8))}...
+                                </div>
+                                <div class="players-list">
+                                    <strong style="display: block; margin-bottom: 8px; color: #6b7280;">NPCs:</strong>
+                                    ${npcsHtml}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                    containerEl.style.display = 'block';
+                }
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                errorEl.innerHTML = `<div class="error">❌ Error: ${escapeHtml(error.message)}</div>`;
+            } finally {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = '<span>🔄</span><span>Refresh</span>';
+            }
+        }
+        
         async function kickPlayer(instanceId, characterId, name, event) {
             if (!confirm(`⚠️ Are you sure you want to kick "${name}" from this zone?\n\nThe player will be disconnected immediately.`)) {
                 return;
@@ -655,10 +764,12 @@
         window.addEventListener('DOMContentLoaded', () => {
             loadStatistics();
             loadZones();
+            loadNPCs();
             
             setInterval(() => {
                 loadStatistics();
                 loadZones();
+                loadNPCs();
             }, 10000);
         });
     </script>

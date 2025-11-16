@@ -1,0 +1,18 @@
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{YYYY-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="info">
+        <appender-ref ref="STDOUT"/>
+    </root>
+    <logger name="org.eclipse.jetty" level="INFO"/>
+    <logger name="io.netty" level="INFO"/>
+    <logger name="net.kibotu.ro.dbviewer" level="DEBUG"/>
+    
+    <!-- Database logging -->
+    <logger name="org.jetbrains.exposed.sql" level="DEBUG"/>
+    <logger name="com.zaxxer.hikari" level="INFO"/>
+</configuration>
+

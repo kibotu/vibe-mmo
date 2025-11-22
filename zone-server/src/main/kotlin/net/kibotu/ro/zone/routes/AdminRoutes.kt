@@ -53,6 +53,100 @@ fun Route.adminRoutes(adminService: AdminService) {
             }
         }
         
+        // Get minimap data for a zone instance
+        get("/zones/{instanceId}/minimap") {
+            try {
+                val instanceId = call.parameters["instanceId"]
+                
+                if (instanceId == null) {
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        ApiResponse<Unit>(
+                            success = false,
+                            error = "Instance ID is required"
+                        )
+                    )
+                    return@get
+                }
+                
+                val minimapData = adminService.getMinimapData(instanceId)
+                if (minimapData != null) {
+                    call.respond(
+                        HttpStatusCode.OK,
+                        ApiResponse(
+                            success = true,
+                            data = minimapData
+                        )
+                    )
+                } else {
+                    call.respond(
+                        HttpStatusCode.NotFound,
+                        ApiResponse<Unit>(
+                            success = false,
+                            error = "Zone instance not found"
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    ApiResponse<Unit>(
+                        success = false,
+                        error = "Failed to fetch minimap data: ${e.message}"
+                    )
+                )
+            }
+        }
+        
+        // Load a map into a zone instance
+        post("/zones/load-map") {
+            try {
+                val zoneName = call.request.queryParameters["zoneName"]
+                
+                if (zoneName == null || zoneName.isBlank()) {
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        ApiResponse<Unit>(
+                            success = false,
+                            error = "Zone name is required"
+                        )
+                    )
+                    return@post
+                }
+                
+                val result = adminService.loadMapIntoZone(zoneName)
+                when (result) {
+                    is net.kibotu.ro.zone.service.LoadMapResult.Success -> {
+                        call.respond(
+                            HttpStatusCode.OK,
+                            ApiResponse(
+                                success = true,
+                                data = result,
+                                message = "Map loaded successfully"
+                            )
+                        )
+                    }
+                    is net.kibotu.ro.zone.service.LoadMapResult.Error -> {
+                        call.respond(
+                            HttpStatusCode.NotFound,
+                            ApiResponse<Unit>(
+                                success = false,
+                                error = result.message
+                            )
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    ApiResponse<Unit>(
+                        success = false,
+                        error = "Failed to load map: ${e.message}"
+                    )
+                )
+            }
+        }
+        
         // Kick a player from a zone
         delete("/zones/{instanceId}/players/{characterId}") {
             try {

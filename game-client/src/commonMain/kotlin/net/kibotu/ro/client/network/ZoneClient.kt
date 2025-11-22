@@ -22,6 +22,36 @@ class ZoneClient(
         }
     }
     
+    suspend fun getAvailableMaps(): Result<List<String>> {
+        return try {
+            val response = client.get("$baseUrl/api/maps")
+            val apiResponse = response.body<ApiResponse<List<String>>>()
+            
+            if (apiResponse.success && apiResponse.data != null) {
+                Result.success(apiResponse.data)
+            } else {
+                Result.failure(Exception(apiResponse.error ?: "Failed to get available maps"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getMapData(mapName: String): Result<ServerMapData> {
+        return try {
+            val response = client.get("$baseUrl/api/maps/$mapName")
+            val apiResponse = response.body<ApiResponse<ServerMapData>>()
+            
+            if (apiResponse.success && apiResponse.data != null) {
+                Result.success(apiResponse.data)
+            } else {
+                Result.failure(Exception(apiResponse.error ?: "Failed to get map data"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
     suspend fun joinZone(sessionToken: String, characterId: String, zoneName: String): Result<JoinZoneResponse> {
         return try {
             val response = client.post("$baseUrl/api/zone/join") {

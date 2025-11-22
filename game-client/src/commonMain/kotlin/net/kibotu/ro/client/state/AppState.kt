@@ -19,11 +19,13 @@ data class AppState(
     val isLoading: Boolean = false,
     // Game world state
     val zoneInstanceId: String? = null,
+    val zoneName: String? = null,
     val playerPosition: Position? = null,
     val players: Map<String, PlayerDTO> = emptyMap(),
     val npcs: Map<String, NPCDTO> = emptyMap(),
     val monsters: Map<String, MonsterDTO> = emptyMap(),
     val chatMessages: List<String> = emptyList(),
+    val mapData: ServerMapData? = null, // Map data from zone server
     // Terminal logs
     val logs: List<LogEntry> = emptyList(),
     // Performance metrics

@@ -27,27 +27,28 @@ data class Monster(
     var health: Int
 )
 
-data class MapData(
-    val name: String,
-    val width: Int,
-    val height: Int,
-    val collisionMap: String? = null, // Base64 encoded bitmap or null
-    val spawnPoints: List<Position>,
-    val npcs: List<NPC>
-)
-
 class ZoneInstance(
     val id: String,
     val zoneName: String,
-    val mapData: MapData
+    val mapData: net.kibotu.ro.zone.model.MapData
 ) {
     private val players = ConcurrentHashMap<String, Player>()
     private val monsters = ConcurrentHashMap<String, Monster>()
     private val mutex = Mutex()
+    private val collisionMap: CollisionMap
     
     init {
-        // Initialize NPCs from map data
-        // Monsters will be spawned dynamically
+        // Decode collision map
+        collisionMap = try {
+            CollisionMap.fromBase64(
+                mapData.collisionMap.data,
+                mapData.collisionMap.width,
+                mapData.collisionMap.height
+            )
+        } catch (e: Exception) {
+            // Fallback to all walkable if collision map is invalid
+            CollisionMap.createEmpty(mapData.width, mapData.height, true)
+        }
     }
     
     /**
@@ -107,7 +108,14 @@ class ZoneInstance(
      * Get all NPCs (static from map data)
      */
     fun getNPCs(): List<NPC> {
-        return mapData.npcs
+        return mapData.npcs.map { npcData ->
+            NPC(
+                id = npcData.id,
+                name = npcData.name,
+                position = npcData.position,
+                type = npcData.type
+            )
+        }
     }
     
     /**
@@ -140,9 +148,13 @@ class ZoneInstance(
      */
     private fun isValidPosition(position: Position): Boolean {
         // Check bounds
-        return position.x >= 0 && position.y >= 0 && 
-               position.x < mapData.width && position.y < mapData.height
-        // TODO: Check collision map if available
+        if (position.x < 0 || position.y < 0 || 
+            position.x >= mapData.width || position.y >= mapData.height) {
+            return false
+        }
+        
+        // Check collision map
+        return collisionMap.isWalkable(position.x, position.y)
     }
     
     /**

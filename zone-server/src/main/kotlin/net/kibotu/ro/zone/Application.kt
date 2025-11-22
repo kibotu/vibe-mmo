@@ -12,9 +12,12 @@ import io.ktor.server.routing.*
 import io.ktor.server.websocket.*
 import kotlinx.serialization.json.Json
 import net.kibotu.ro.zone.routes.adminRoutes
+import net.kibotu.ro.zone.routes.mapRoutes
 import net.kibotu.ro.zone.routes.zoneRoutes
 import net.kibotu.ro.zone.service.AdminService
 import net.kibotu.ro.zone.service.CharacterValidationService
+import net.kibotu.ro.zone.service.MapStorageService
+import net.kibotu.ro.zone.service.MapValidator
 import net.kibotu.ro.zone.service.SessionValidationService
 import net.kibotu.ro.zone.service.ZoneService
 import net.kibotu.ro.zone.websocket.WebSocketHandler
@@ -90,7 +93,9 @@ fun Application.module() {
     // Initialize services
     val sessionValidationService = SessionValidationService(accountServerUrl)
     val characterValidationService = CharacterValidationService(characterServerUrl)
-    val zoneService = ZoneService(sessionValidationService, characterValidationService)
+    val mapStorageService = MapStorageService()
+    val mapValidator = MapValidator()
+    val zoneService = ZoneService(sessionValidationService, characterValidationService, mapStorageService, mapValidator)
     val webSocketHandler = WebSocketHandler(zoneService)
     val adminService = AdminService(zoneService, webSocketHandler)
     
@@ -120,8 +125,17 @@ fun Application.module() {
             call.respondText(htmlContent, ContentType.Text.Html)
         }
         
+        // Level editor - serve HTML file
+        get("/editor") {
+            val htmlContent = Application::class.java.classLoader.getResourceAsStream("admin/editor.html")
+                ?.bufferedReader()?.readText()
+                ?: throw Exception("Editor HTML file not found")
+            call.respondText(htmlContent, ContentType.Text.Html)
+        }
+        
         zoneRoutes(zoneService)
         adminRoutes(adminService)
+        mapRoutes(mapStorageService, mapValidator)
         webSocketHandler.setupRoutes(this)
     }
 }

@@ -186,9 +186,24 @@ class GameViewModel {
         
         val token = _state.value.sessionToken ?: return
         
-        // Join zone (default zone: "prontera")
-        ClientLogger.info("Joining zone: prontera", "Zone")
-        zoneClient.joinZone(token, character.id, "prontera")
+        // Get first available zone
+        val zoneName = zoneClient.getAvailableMaps()
+            .getOrNull()
+            ?.firstOrNull()
+            ?: "prontera" // Fallback to default if no maps available
+        
+        ClientLogger.info("Joining zone: $zoneName", "Zone")
+        
+        // Fetch map data from server
+        val mapDataResult = zoneClient.getMapData(zoneName)
+        val mapData = mapDataResult.getOrNull()
+        if (mapData != null) {
+            ClientLogger.info("Map data loaded: ${mapData.name} (${mapData.width}x${mapData.height})", "Zone")
+        } else {
+            ClientLogger.warn("Failed to load map data: ${mapDataResult.exceptionOrNull()?.message}", "Zone")
+        }
+        
+        zoneClient.joinZone(token, character.id, zoneName)
             .onSuccess { response ->
                 ClientLogger.info("Zone joined: ${response.zoneInstanceId}", "Zone")
                 ClientLogger.debug("Spawn position: (${response.spawnPosition.x}, ${response.spawnPosition.y})", "Zone")
@@ -219,7 +234,9 @@ class GameViewModel {
                         it.copy(
                             isLoading = false,
                             zoneInstanceId = response.zoneInstanceId,
+                            zoneName = zoneName,
                             playerPosition = response.spawnPosition,
+                            mapData = mapData,
                             currentScreen = Screen.GameWorld(character.id, character.name)
                         )
                     }
@@ -251,18 +268,20 @@ class GameViewModel {
     }
     
     fun movePlayer(direction: String) {
-        ClientLogger.info("movePlayer() called with direction: $direction", "Movement")
+        ClientLogger.info("GameViewModel.movePlayer() called with direction: $direction", "Movement")
         
         val currentPosition = _state.value.playerPosition
         val selectedCharacter = _state.value.selectedCharacter
         
+        ClientLogger.debug("Current state: playerPosition=$currentPosition, selectedCharacter=${selectedCharacter?.id}", "Movement")
+        
         if (currentPosition == null) {
-            ClientLogger.warn("movePlayer() called but playerPosition is null", "Movement")
+            ClientLogger.warn("movePlayer() called but playerPosition is null. Cannot move.", "Movement")
             return
         }
         
         if (selectedCharacter == null) {
-            ClientLogger.warn("movePlayer() called but selectedCharacter is null", "Movement")
+            ClientLogger.warn("movePlayer() called but selectedCharacter is null. Cannot move.", "Movement")
             return
         }
         
@@ -273,13 +292,35 @@ class GameViewModel {
             "down" -> Position(currentPosition.x, currentPosition.y + 1)
             "left" -> Position(currentPosition.x - 1, currentPosition.y)
             "right" -> Position(currentPosition.x + 1, currentPosition.y)
-            else -> currentPosition
+            else -> {
+                ClientLogger.warn("Unknown direction: $direction", "Movement")
+                currentPosition
+            }
         }
         
         // Don't update if position hasn't changed
-        if (newPosition == currentPosition) return
+        if (newPosition == currentPosition) {
+            ClientLogger.debug("Position unchanged, skipping update", "Movement")
+            return
+        }
         
-        ClientLogger.debug("Moving player: $direction from (${currentPosition.x}, ${currentPosition.y}) to (${newPosition.x}, ${newPosition.y})", "Movement")
+        // Check collision using map data from state
+        val mapData = _state.value.mapData
+        if (mapData != null) {
+            // Check if new position is within bounds
+            val collisionMapData = mapData.collisionMap
+            if (newPosition.x < 0 || newPosition.x >= collisionMapData.width ||
+                newPosition.y < 0 || newPosition.y >= collisionMapData.height) {
+                ClientLogger.debug("Movement blocked: position out of bounds: ($newPosition)", "Movement")
+                return
+            }
+            
+            // Note: Full collision checking requires converting base64 collision data
+            // For now, we'll let the server validate movement
+            // TODO: Convert ServerCollisionMapData to CollisionMap for client-side validation
+        }
+        
+        ClientLogger.info("Moving player: $direction from (${currentPosition.x}, ${currentPosition.y}) to (${newPosition.x}, ${newPosition.y})", "Movement")
         
         // Optimistic update: update local state immediately for responsive UI
         _state.update { state ->
@@ -289,21 +330,86 @@ class GameViewModel {
             // Also update in players map if we're tracking ourselves
             val currentPlayer = state.players[selectedCharacter.id]
             if (currentPlayer != null) {
+                val updatedPlayer = currentPlayer.copy(
+                    position = newPosition,
+                    direction = direction
+                )
+                ClientLogger.debug("Updating player in map: ${selectedCharacter.id} -> $updatedPlayer", "Movement")
                 updatedState.copy(
-                    players = state.players + (selectedCharacter.id to currentPlayer.copy(
+                    players = state.players + (selectedCharacter.id to updatedPlayer)
+                )
+            } else {
+                ClientLogger.debug("Player not found in map, creating new entry", "Movement")
+                updatedState.copy(
+                    players = state.players + (selectedCharacter.id to PlayerDTO(
+                        characterId = selectedCharacter.id,
+                        name = selectedCharacter.name,
                         position = newPosition,
                         direction = direction
                     ))
                 )
-            } else {
-                updatedState
             }
         }
         
         // Send movement to server
         scope.launch {
-            zoneWebSocketClient.sendMove(direction, newPosition)
+            ClientLogger.info("Sending movement to server: direction=$direction, position=$newPosition", "Movement")
+            try {
+                zoneWebSocketClient.sendMove(direction, newPosition)
+                ClientLogger.debug("Movement sent to server successfully", "Movement")
+            } catch (e: Exception) {
+                ClientLogger.error("Failed to send movement to server: ${e.message}", "Movement")
+            }
         }
+    }
+    
+    /**
+     * Move player toward a target position (for click-to-move).
+     * This sets the target destination. Pathfinding will be handled by the client-side GameScreen.
+     * According to GAME_SPEC.md section 2.2, pathfinding uses A* algorithm.
+     */
+    fun movePlayerToPosition(targetPosition: Position) {
+        val currentPosition = _state.value.playerPosition
+        val selectedCharacter = _state.value.selectedCharacter
+        
+        if (currentPosition == null || selectedCharacter == null) {
+            ClientLogger.warn("movePlayerToPosition() called but playerPosition or selectedCharacter is null", "Movement")
+            return
+        }
+        
+        // If already at target, do nothing
+        if (currentPosition == targetPosition) {
+            ClientLogger.debug("Already at target position", "Movement")
+            return
+        }
+        
+        ClientLogger.info(
+            "Setting movement target: ($targetPosition) from current position ($currentPosition)",
+            "Movement"
+        )
+        
+        // Store target position for pathfinding (client-side GameScreen will handle A* pathfinding)
+        // For now, use simple direct movement as fallback
+        // Full pathfinding integration should be done in GameScreen using Pathfinding class
+        
+        // Calculate direction toward target (simple: move in the direction with largest difference)
+        val deltaX = targetPosition.x - currentPosition.x
+        val deltaY = targetPosition.y - currentPosition.y
+        
+        val direction = when {
+            kotlin.math.abs(deltaY) > kotlin.math.abs(deltaX) -> {
+                // Move vertically first
+                if (deltaY < 0) "up" else "down"
+            }
+            else -> {
+                // Move horizontally
+                if (deltaX < 0) "left" else "right"
+            }
+        }
+        
+        // Move one step in the calculated direction
+        // Note: Full pathfinding should be implemented in GameScreen using Pathfinding.findPath()
+        movePlayer(direction)
     }
     
     fun sendChat(message: String) {

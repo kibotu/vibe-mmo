@@ -8,7 +8,9 @@ import kotlinx.coroutines.sync.withLock
 
 class ZoneService(
     val sessionValidationService: SessionValidationService,
-    private val characterValidationService: CharacterValidationService
+    private val characterValidationService: CharacterValidationService,
+    private val mapStorageService: MapStorageService,
+    private val mapValidator: MapValidator
 ) {
     private val zoneInstances = ConcurrentHashMap<String, ZoneInstance>()
     private val mutex = Mutex()
@@ -20,35 +22,8 @@ class ZoneService(
         return zoneInstances.values.toList()
     }
     
-    init {
-        // Initialize default zones
-        initializeDefaultZones()
-    }
-    
-    /**
-     * Initialize default zone maps
-     */
-    private fun initializeDefaultZones() {
-        // Prontera - default starting town
-        val pronteraMap = MapData(
-            name = "prontera",
-            width = 1000,
-            height = 1000,
-            spawnPoints = listOf(
-                Position(150, 150),
-                Position(160, 160),
-                Position(170, 170)
-            ),
-            npcs = listOf(
-                NPC("npc-1", "Merchant", Position(200, 200), "merchant"),
-                NPC("npc-2", "Guard", Position(300, 300), "guard")
-            )
-        )
-        
-        // Create a default instance for prontera
-        val instanceId = UUID.randomUUID().toString()
-        zoneInstances[instanceId] = ZoneInstance(instanceId, "prontera", pronteraMap)
-    }
+    // Maps are loaded on-demand when zones are created
+    // No initialization needed
     
     /**
      * Join a zone with a character
@@ -128,27 +103,48 @@ class ZoneService(
     }
     
     /**
+     * Create a zone instance for a map (admin function)
+     */
+    suspend fun createZoneInstance(zoneName: String): ZoneInstance? {
+        return mutex.withLock {
+            // Check if zone already exists
+            val existing = zoneInstances.values.find { it.zoneName == zoneName }
+            if (existing != null) {
+                return@withLock existing
+            }
+            
+            // Load map data
+            val mapData = getMapDataForZone(zoneName) ?: return@withLock null
+            
+            // Create new instance
+            val instanceId = UUID.randomUUID().toString()
+            val newInstance = ZoneInstance(instanceId, zoneName, mapData)
+            zoneInstances[instanceId] = newInstance
+            newInstance
+        }
+    }
+    
+    /**
      * Get map data for a zone name
      */
-    private fun getMapDataForZone(zoneName: String): MapData? {
-        return when (zoneName.lowercase()) {
-            "prontera" -> MapData(
-                name = "prontera",
-                width = 1000,
-                height = 1000,
-                spawnPoints = listOf(
-                    Position(150, 150),
-                    Position(160, 160),
-                    Position(170, 170)
-                ),
-                npcs = listOf(
-                    NPC("npc-1", "Merchant", Position(200, 200), "merchant"),
-                    NPC("npc-2", "Guard", Position(300, 300), "guard")
-                )
-            )
-            // Add more zones as needed
-            else -> null
+    private fun getMapDataForZone(zoneName: String): net.kibotu.ro.zone.model.MapData? {
+        val mapData = mapStorageService.loadMap(zoneName.lowercase())
+        
+        if (mapData == null) {
+            return null
         }
+        
+        // Validate map
+        val validationResult = mapValidator.validate(mapData)
+        if (!validationResult.isValid) {
+            // Log validation errors but don't fail - allow invalid maps for development
+            System.err.println("Warning: Map validation failed for $zoneName:")
+            validationResult.errors.forEach { error ->
+                System.err.println("  - $error")
+            }
+        }
+        
+        return mapData
     }
 }
 

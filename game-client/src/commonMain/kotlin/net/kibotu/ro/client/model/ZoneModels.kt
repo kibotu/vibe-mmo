@@ -110,3 +110,48 @@ sealed class ServerMessage {
     ) : ServerMessage()
 }
 
+// Server Map Data (matches zone server MapData structure)
+@Serializable
+data class ServerMapData(
+    val name: String,
+    val displayName: String,
+    val description: String? = null,
+    val width: Int,
+    val height: Int,
+    val tileSize: Int = 32,
+    val collisionMap: ServerCollisionMapData,
+    val spawnPoints: List<Position>,
+    val npcs: List<ServerNPCData>,
+    val monsterSpawns: List<ServerMonsterSpawnData>? = null,
+    val version: String = "1.0",
+    val createdAt: String? = null,
+    val updatedAt: String? = null
+)
+
+@Serializable
+data class ServerCollisionMapData(
+    val width: Int,
+    val height: Int,
+    val data: String  // Base64-encoded bitmap
+)
+
+@Serializable
+data class ServerNPCData(
+    val id: String,
+    val name: String,
+    val position: Position,
+    val type: String,
+    val direction: String = "down",
+    val properties: Map<String, String> = emptyMap()
+)
+
+@Serializable
+data class ServerMonsterSpawnData(
+    val id: String,
+    val monsterType: String,
+    val position: Position,
+    val respawnTime: Int = 5000,
+    val maxCount: Int = 1,
+    val spawnRadius: Int = 0
+)
+

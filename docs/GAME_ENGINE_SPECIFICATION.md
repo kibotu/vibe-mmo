@@ -13,13 +13,14 @@
 2. [World Representation](#world-representation)
 3. [Camera System](#camera-system)
 4. [Controls & Input](#controls--input)
-5. [Rendering Pipeline](#rendering-pipeline)
-6. [Entity System](#entity-system)
-7. [Movement System](#movement-system)
-8. [Collision Detection](#collision-detection)
-9. [Network Synchronization](#network-synchronization)
-10. [Minimal Prototype Requirements](#minimal-prototype-requirements)
-11. [Technical Implementation Details](#technical-implementation-details)
+5. [Mouse Movement & Camera Handling](#mouse-movement--camera-handling)
+6. [Rendering Pipeline](#rendering-pipeline)
+7. [Entity System](#entity-system)
+8. [Movement System](#movement-system)
+9. [Collision Detection](#collision-detection)
+10. [Network Synchronization](#network-synchronization)
+11. [Minimal Prototype Requirements](#minimal-prototype-requirements)
+12. [Technical Implementation Details](#technical-implementation-details)
 
 ---
 
@@ -222,11 +223,530 @@ When a key is held down, movement continues at intervals:
 
 ### Future Controls (Not Required for Prototype)
 
-- **Mouse Click**: Move to clicked position (pathfinding)
 - **Space**: Attack/interact
 - **Enter**: Open chat
 - **Tab**: Target selection
 - **Number Keys**: Skill shortcuts
+
+---
+
+## Mouse Movement & Camera Handling
+
+### Overview
+
+The mouse provides multiple interaction modes for both player movement and camera control. This section defines how mouse input is processed for click-to-move, camera panning, and entity interaction.
+
+### Mouse Input Modes
+
+The game supports several mouse interaction modes:
+
+1. **Click-to-Move**: Left-click on ground to move player
+2. **Camera Panning**: Middle-click drag or edge scrolling to move camera
+3. **Entity Interaction**: Right-click on entities (NPCs, monsters, players)
+4. **Camera Zoom**: Mouse wheel for zoom in/out (optional)
+
+### Click-to-Move System
+
+#### Implementation
+
+```kotlin
+class MouseInputHandler(
+    private val camera: Camera,
+    private val pathfinder: Pathfinder,
+    private val movementHandler: MovementHandler
+) {
+    private var lastClickTime = 0L
+    private val doubleClickThreshold = 300L // milliseconds
+    
+    fun handleMouseClick(screenX: Float, screenY: Float, button: MouseButton) {
+        when (button) {
+            MouseButton.Left -> {
+                val worldPos = camera.screenToWorld(screenX, screenY)
+                handleLeftClick(worldPos)
+            }
+            MouseButton.Right -> {
+                val worldPos = camera.screenToWorld(screenX, screenY)
+                handleRightClick(worldPos)
+            }
+            MouseButton.Middle -> {
+                // Start camera panning
+                startCameraPan(screenX, screenY)
+            }
+        }
+    }
+    
+    private fun handleLeftClick(worldPos: Position) {
+        val currentTime = System.currentTimeMillis()
+        val isDoubleClick = (currentTime - lastClickTime) < doubleClickThreshold
+        lastClickTime = currentTime
+        
+        if (isDoubleClick) {
+            // Double-click: Run to position
+            movePlayerTo(worldPos, run = true)
+        } else {
+            // Single-click: Walk to position
+            movePlayerTo(worldPos, run = false)
+        }
+    }
+    
+    private fun movePlayerTo(targetPos: Position, run: Boolean) {
+        // Find path from current position to target
+        val currentPos = getPlayerPosition()
+        val path = pathfinder.findPath(currentPos, targetPos)
+        
+        if (path.isNotEmpty()) {
+            // Send path to movement handler
+            movementHandler.setPath(path, run)
+        } else {
+            // Invalid path or unreachable
+            showMessage("Cannot reach that location")
+        }
+    }
+}
+```
+
+#### Pathfinding
+
+For click-to-move, the client calculates a path using A* pathfinding:
+
+```kotlin
+class Pathfinder(
+    private val collisionMap: CollisionMap
+) {
+    fun findPath(start: Position, end: Position): List<Position> {
+        // A* pathfinding algorithm
+        val openSet = mutableListOf<Node>()
+        val closedSet = mutableSetOf<Position>()
+        val cameFrom = mutableMapOf<Position, Position>()
+        
+        val startNode = Node(start, 0f, heuristic(start, end))
+        openSet.add(startNode)
+        
+        while (openSet.isNotEmpty()) {
+            val current = openSet.minByOrNull { it.fCost } ?: break
+            openSet.remove(current)
+            closedSet.add(current.position)
+            
+            if (current.position == end) {
+                // Reconstruct path
+                return reconstructPath(cameFrom, start, end)
+            }
+            
+            // Check neighbors
+            val neighbors = getNeighbors(current.position)
+            for (neighbor in neighbors) {
+                if (neighbor in closedSet || !collisionMap.isWalkable(neighbor.x, neighbor.y)) {
+                    continue
+                }
+                
+                val tentativeG = current.gCost + 1f
+                val existingNode = openSet.find { it.position == neighbor }
+                
+                if (existingNode == null) {
+                    val newNode = Node(neighbor, tentativeG, heuristic(neighbor, end))
+                    openSet.add(newNode)
+                    cameFrom[neighbor] = current.position
+                } else if (tentativeG < existingNode.gCost) {
+                    existingNode.gCost = tentativeG
+                    existingNode.fCost = tentativeG + existingNode.hCost
+                    cameFrom[neighbor] = current.position
+                }
+            }
+        }
+        
+        return emptyList() // No path found
+    }
+    
+    private fun heuristic(a: Position, b: Position): Float {
+        // Manhattan distance
+        return (abs(a.x - b.x) + abs(a.y - b.y)).toFloat()
+    }
+    
+    private fun getNeighbors(pos: Position): List<Position> {
+        return listOf(
+            Position(pos.x, pos.y - 1), // Up
+            Position(pos.x, pos.y + 1), // Down
+            Position(pos.x - 1, pos.y), // Left
+            Position(pos.x + 1, pos.y)  // Right
+        )
+    }
+}
+```
+
+#### Path Execution
+
+```kotlin
+class MovementHandler(
+    private val viewModel: GameViewModel
+) {
+    private var currentPath: List<Position> = emptyList()
+    private var pathIndex = 0
+    private var isRunning = false
+    
+    fun setPath(path: List<Position>, run: Boolean) {
+        currentPath = path
+        pathIndex = 0
+        isRunning = run
+        executeNextStep()
+    }
+    
+    private fun executeNextStep() {
+        if (pathIndex >= currentPath.size) {
+            currentPath = emptyList()
+            return
+        }
+        
+        val nextPos = currentPath[pathIndex]
+        val currentPos = viewModel.getPlayerPosition()
+        
+        // Determine direction
+        val direction = when {
+            nextPos.y < currentPos.y -> "up"
+            nextPos.y > currentPos.y -> "down"
+            nextPos.x < currentPos.x -> "left"
+            nextPos.x > currentPos.x -> "right"
+            else -> return
+        }
+        
+        // Move to next position
+        viewModel.movePlayer(direction)
+        
+        // Wait for movement to complete, then move to next step
+        val delay = if (isRunning) 100L else 150L // Faster when running
+        CoroutineScope(Dispatchers.Default).launch {
+            delay(delay)
+            pathIndex++
+            executeNextStep()
+        }
+    }
+}
+```
+
+### Camera Panning
+
+#### Middle-Click Drag
+
+```kotlin
+class CameraPanHandler(
+    private val camera: Camera
+) {
+    private var isPanning = false
+    private var panStartX = 0f
+    private var panStartY = 0f
+    private var cameraStartX = 0f
+    private var cameraStartY = 0f
+    
+    fun startPan(screenX: Float, screenY: Float) {
+        isPanning = true
+        panStartX = screenX
+        panStartY = screenY
+        cameraStartX = camera.cameraX
+        cameraStartY = camera.cameraY
+    }
+    
+    fun updatePan(screenX: Float, screenY: Float) {
+        if (!isPanning) return
+        
+        val deltaX = panStartX - screenX
+        val deltaY = panStartY - screenY
+        
+        camera.cameraX = cameraStartX + deltaX
+        camera.cameraY = cameraStartY + deltaY
+        
+        // Clamp camera to map bounds
+        clampCameraToBounds()
+    }
+    
+    fun endPan() {
+        isPanning = false
+    }
+}
+```
+
+#### Edge Scrolling
+
+Camera automatically pans when mouse is near screen edges:
+
+```kotlin
+class EdgeScrollHandler(
+    private val camera: Camera,
+    private val viewportWidth: Float,
+    private val viewportHeight: Float
+) {
+    private val edgeScrollZone = 50f // pixels from edge
+    private val scrollSpeed = 5f // pixels per frame
+    
+    fun update(mouseX: Float, mouseY: Float) {
+        var deltaX = 0f
+        var deltaY = 0f
+        
+        // Left edge
+        if (mouseX < edgeScrollZone) {
+            deltaX = scrollSpeed
+        }
+        // Right edge
+        else if (mouseX > viewportWidth - edgeScrollZone) {
+            deltaX = -scrollSpeed
+        }
+        
+        // Top edge
+        if (mouseY < edgeScrollZone) {
+            deltaY = scrollSpeed
+        }
+        // Bottom edge
+        else if (mouseY > viewportHeight - edgeScrollZone) {
+            deltaY = -scrollSpeed
+        }
+        
+        if (deltaX != 0f || deltaY != 0f) {
+            camera.cameraX += deltaX
+            camera.cameraY += deltaY
+            clampCameraToBounds()
+        }
+    }
+}
+```
+
+#### Camera Mode Toggle
+
+Players can toggle between follow camera and free camera:
+
+```kotlin
+enum class CameraMode {
+    FOLLOW_PLAYER,  // Camera follows player (default)
+    FREE_CAMERA     // Camera can be panned freely
+}
+
+class CameraController(
+    private val camera: Camera,
+    private val playerPosition: Position?
+) {
+    private var mode = CameraMode.FOLLOW_PLAYER
+    
+    fun toggleMode() {
+        mode = when (mode) {
+            CameraMode.FOLLOW_PLAYER -> CameraMode.FREE_CAMERA
+            CameraMode.FREE_CAMERA -> CameraMode.FOLLOW_PLAYER
+        }
+    }
+    
+    fun update() {
+        when (mode) {
+            CameraMode.FOLLOW_PLAYER -> {
+                playerPosition?.let { pos ->
+                    camera.targetX = pos.x.toFloat()
+                    camera.targetY = pos.y.toFloat()
+                }
+            }
+            CameraMode.FREE_CAMERA -> {
+                // Camera position is controlled by panning/edge scrolling
+            }
+        }
+    }
+}
+```
+
+### Mouse Wheel Zoom
+
+Optional camera zoom functionality:
+
+```kotlin
+class CameraZoomHandler(
+    private val camera: Camera
+) {
+    private var zoomLevel = 1.0f
+    private val minZoom = 0.5f  // Zoom out (see more)
+    private val maxZoom = 2.0f  // Zoom in (see less)
+    private val zoomStep = 0.1f
+    
+    fun handleWheelScroll(scrollAmount: Float) {
+        val newZoom = zoomLevel + (scrollAmount * zoomStep)
+        zoomLevel = newZoom.coerceIn(minZoom, maxZoom)
+        
+        // Adjust tile size based on zoom
+        camera.effectiveTileSize = camera.baseTileSize * zoomLevel
+    }
+    
+    fun resetZoom() {
+        zoomLevel = 1.0f
+        camera.effectiveTileSize = camera.baseTileSize
+    }
+}
+```
+
+### Entity Interaction
+
+#### Right-Click on Entities
+
+```kotlin
+class EntityInteractionHandler(
+    private val camera: Camera,
+    private val entityManager: EntityManager
+) {
+    fun handleRightClick(screenX: Float, screenY: Float) {
+        val worldPos = camera.screenToWorld(screenX, screenY)
+        val entity = findEntityAtPosition(worldPos)
+        
+        when (entity) {
+            is NPC -> {
+                // Show NPC interaction menu
+                showNPCInteractionMenu(entity)
+            }
+            is Monster -> {
+                // Target monster for attack
+                targetMonster(entity)
+            }
+            is Player -> {
+                // Show player context menu
+                showPlayerContextMenu(entity)
+            }
+            null -> {
+                // No entity at position
+            }
+        }
+    }
+    
+    private fun findEntityAtPosition(pos: Position): Entity? {
+        // Check entities at or near the clicked position
+        val entities = entityManager.getAllEntities()
+        return entities.find { entity ->
+            val distance = abs(entity.position.x - pos.x) + abs(entity.position.y - pos.y)
+            distance <= 1 // Within 1 tile
+        }
+    }
+}
+```
+
+### Mouse Cursor States
+
+The cursor changes based on what the mouse is hovering over:
+
+```kotlin
+enum class CursorType {
+    DEFAULT,        // Normal arrow
+    MOVE,           // Hand/pointer (hovering over walkable ground)
+    ATTACK,         // Sword/crosshair (hovering over attackable entity)
+    INTERACT,       // Hand/interact icon (hovering over NPC)
+    BLOCKED         // Blocked icon (hovering over non-walkable area)
+}
+
+class CursorHandler(
+    private val camera: Camera,
+    private val collisionMap: CollisionMap
+) {
+    fun updateCursor(mouseX: Float, mouseY: Float): CursorType {
+        val worldPos = camera.screenToWorld(mouseX, mouseY)
+        
+        // Check if position is walkable
+        if (!collisionMap.isWalkable(worldPos.x, worldPos.y)) {
+            return CursorType.BLOCKED
+        }
+        
+        // Check if hovering over entity
+        val entity = findEntityAtPosition(worldPos)
+        when (entity) {
+            is Monster -> return CursorType.ATTACK
+            is NPC -> return CursorType.INTERACT
+            else -> return CursorType.MOVE
+        }
+    }
+}
+```
+
+### Mouse Input Integration
+
+Complete mouse input handling:
+
+```kotlin
+class MouseInputManager(
+    private val camera: Camera,
+    private val cameraController: CameraController,
+    private val mouseInputHandler: MouseInputHandler,
+    private val cameraPanHandler: CameraPanHandler,
+    private val edgeScrollHandler: EdgeScrollHandler,
+    private val zoomHandler: CameraZoomHandler,
+    private val cursorHandler: CursorHandler
+) {
+    fun handleMouseDown(screenX: Float, screenY: Float, button: MouseButton) {
+        when (button) {
+            MouseButton.Left -> {
+                if (cameraController.mode == CameraMode.FREE_CAMERA) {
+                    cameraPanHandler.startPan(screenX, screenY)
+                } else {
+                    mouseInputHandler.handleMouseClick(screenX, screenY, button)
+                }
+            }
+            MouseButton.Middle -> {
+                cameraPanHandler.startPan(screenX, screenY)
+            }
+            MouseButton.Right -> {
+                mouseInputHandler.handleMouseClick(screenX, screenY, button)
+            }
+        }
+    }
+    
+    fun handleMouseMove(screenX: Float, screenY: Float) {
+        // Update cursor
+        val cursorType = cursorHandler.updateCursor(screenX, screenY)
+        setCursor(cursorType)
+        
+        // Update camera panning
+        cameraPanHandler.updatePan(screenX, screenY)
+        
+        // Edge scrolling (only in free camera mode)
+        if (cameraController.mode == CameraMode.FREE_CAMERA) {
+            edgeScrollHandler.update(screenX, screenY)
+        }
+    }
+    
+    fun handleMouseUp(screenX: Float, screenY: Float, button: MouseButton) {
+        when (button) {
+            MouseButton.Middle -> {
+                cameraPanHandler.endPan()
+            }
+            MouseButton.Left -> {
+                if (cameraPanHandler.isPanning) {
+                    cameraPanHandler.endPan()
+                }
+            }
+        }
+    }
+    
+    fun handleWheelScroll(scrollAmount: Float) {
+        zoomHandler.handleWheelScroll(scrollAmount)
+    }
+}
+```
+
+### Configuration Options
+
+```kotlin
+data class MouseSettings(
+    val enableClickToMove: Boolean = true,
+    val enableCameraPanning: Boolean = true,
+    val enableEdgeScrolling: Boolean = true,
+    val enableZoom: Boolean = false,  // Optional feature
+    val edgeScrollZone: Float = 50f,
+    val edgeScrollSpeed: Float = 5f,
+    val doubleClickThreshold: Long = 300L,  // milliseconds
+    val pathfindingEnabled: Boolean = true
+)
+```
+
+### Prototype Requirements
+
+**Minimum Implementation:**
+- [ ] Left-click to move player (simple direct movement, no pathfinding)
+- [ ] Middle-click drag for camera panning
+- [ ] Camera bounds clamping
+
+**Optional Features:**
+- [ ] Click-to-move with pathfinding
+- [ ] Edge scrolling
+- [ ] Mouse wheel zoom
+- [ ] Right-click entity interaction
+- [ ] Cursor state changes
+- [ ] Double-click to run
 
 ---
 
@@ -700,25 +1220,33 @@ Future:
    - [x] Tile-based movement
    - [x] Continuous movement while key held
    - [x] Server validation
+   - [ ] Left-click to move (basic implementation)
 
-3. **Entity Rendering**
+3. **Mouse & Camera Controls**
+   - [ ] Left-click to move player
+   - [ ] Middle-click drag for camera panning
+   - [ ] Camera bounds clamping
+   - [ ] Screen-to-world coordinate conversion
+
+4. **Entity Rendering**
    - [x] Own player (distinct visual)
    - [x] Other players
    - [x] NPCs
    - [x] Monsters
    - [x] Depth sorting (Y-order)
 
-4. **Camera System**
+5. **Camera System**
    - [x] Follow camera
    - [x] World-to-screen conversion
    - [x] Bounds clamping
+   - [ ] Free camera mode (panning)
 
-5. **Network**
+6. **Network**
    - [x] Movement synchronization
    - [x] Player join/leave
    - [x] Zone state sync
 
-6. **Collision**
+7. **Collision**
    - [x] Map bounds checking
    - [x] Basic collision map (walkable/non-walkable)
 

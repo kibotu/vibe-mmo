@@ -1,31 +1,160 @@
 package net.kibotu.ro.client.ui
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import net.kibotu.ro.client.model.*
 import net.kibotu.ro.client.viewmodel.GameViewModel
 import net.kibotu.ro.client.util.ClientLogger
 
+/**
+ * Reference to LibGDX window for cleanup purposes
+ */
+expect class LibGDXWindowRef {
+    fun close()
+}
+
 @Composable
 fun GameWorldScreen(viewModel: GameViewModel, characterName: String) {
+    val state by viewModel.state.collectAsState()
+    val scope = rememberCoroutineScope()
+    
+    // Store reference to LibGDX window for cleanup
+    var libGDXWindowRef by remember { mutableStateOf<LibGDXWindowRef?>(null) }
+    
+    // Launch LibGDX window when entering game world
+    LaunchedEffect(Unit) {
+        ClientLogger.info("GameWorldScreen: LaunchedEffect triggered", "GameWorldScreen")
+        ClientLogger.info("GameWorldScreen: Current state - selectedCharacter=${state.selectedCharacter?.id}, playerPosition=${state.playerPosition}", "GameWorldScreen")
+        
+        val characterId = state.selectedCharacter?.id
+        val spawnPosition = state.playerPosition ?: Position(150, 150)
+        
+        ClientLogger.info("GameWorldScreen: Launching LibGDX window for character: $characterId at position: $spawnPosition", "GameWorldScreen")
+        
+        if (characterId != null) {
+            // Launch LibGDX game window (platform-specific)
+            ClientLogger.info("GameWorldScreen: Calling launchLibGDXGameWindow()", "GameWorldScreen")
+            val windowRef = launchLibGDXGameWindow(viewModel, characterId, spawnPosition)
+            libGDXWindowRef = windowRef
+            ClientLogger.info("GameWorldScreen: launchLibGDXGameWindow() returned", "GameWorldScreen")
+        } else {
+            ClientLogger.error("GameWorldScreen: Character ID is null, cannot launch game window", "GameWorldScreen")
+        }
+    }
+    
+    // Cleanup: Close LibGDX window when leaving this screen
+    DisposableEffect(Unit) {
+        onDispose {
+            ClientLogger.info("GameWorldScreen: Disposing, closing LibGDX window", "GameWorldScreen")
+            libGDXWindowRef?.close()
+            libGDXWindowRef = null
+        }
+    }
+    
+    // Observe state changes and log them
+    LaunchedEffect(state.playerPosition, state.players, state.npcs, state.monsters) {
+        ClientLogger.debug(
+            "GameWorldScreen: State changed - playerPosition=${state.playerPosition}, players=${state.players.size}, npcs=${state.npcs.size}, monsters=${state.monsters.size}",
+            "GameWorldScreen"
+        )
+    }
+    
+    // Main UI layout
+    Column(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // Top bar with stats and logout button
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Stats section
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "Character: $characterName",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            "Position: (${state.playerPosition?.x ?: 0}, ${state.playerPosition?.y ?: 0})",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            "FPS: ${state.fps}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = when {
+                                state.fps >= 60 -> Color(0xFF4CAF50)
+                                state.fps >= 30 -> Color(0xFFFFC107)
+                                else -> Color(0xFFF44336)
+                            }
+                        )
+                        Text(
+                            "Ping: ${state.ping}ms",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = when {
+                                state.ping == 0L -> Color.Gray
+                                state.ping < 50 -> Color(0xFF4CAF50)
+                                state.ping < 100 -> Color(0xFFFFC107)
+                                else -> Color(0xFFF44336)
+                            }
+                        )
+                    }
+                }
+                
+                // Logout button
+                Button(
+                    onClick = {
+                        scope.launch {
+                            viewModel.logout()
+                        }
+                    }
+                ) {
+                    Text("Logout")
+                }
+            }
+        }
+        
+        // Terminal/log console at the bottom
+        Spacer(modifier = Modifier.weight(1f))
+        
+        Terminal(
+            logs = state.logs,
+            onClear = { viewModel.clearLogs() },
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+// Platform-specific function to launch LibGDX window
+expect fun launchLibGDXGameWindow(
+    viewModel: GameViewModel,
+    characterId: String,
+    initialPosition: Position
+): LibGDXWindowRef
+
+// Keep the old implementation commented for reference, but we're using LibGDX now
+// Old implementation removed - using LibGDX now
+/*
+@Composable
+fun GameWorldScreenOld(viewModel: GameViewModel, characterName: String) {
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
     
@@ -388,4 +517,5 @@ fun GameWorldScreen(viewModel: GameViewModel, characterName: String) {
         }
     }
 }
+*/
 

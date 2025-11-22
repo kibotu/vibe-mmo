@@ -52,6 +52,14 @@ kotlin {
                 
                 // Logging
                 implementation(libs.logback)
+                
+                // LibGDX for hardware-accelerated game rendering
+                implementation("com.badlogicgames.gdx:gdx:1.12.1")
+                implementation("com.badlogicgames.gdx:gdx-backend-lwjgl3:1.12.1")
+                implementation("com.badlogicgames.gdx:gdx-platform:1.12.1:natives-desktop")
+                // FreeType font generator for better font rendering
+                implementation("com.badlogicgames.gdx:gdx-freetype:1.12.1")
+                implementation("com.badlogicgames.gdx:gdx-freetype-platform:1.12.1:natives-desktop")
             }
         }
         

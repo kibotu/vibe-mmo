@@ -1,0 +1,39 @@
+{
+  "name": "prontera",
+  "displayName": "Prontera - Capital City",
+  "description": "The capital city of Rune-Midgard",
+  "width": 1000,
+  "height": 1000,
+  "tileSize": 32,
+  "collisionMap": {
+    "width": 1000,
+    "height": 1000,
+    "data": ""
+  },
+  "spawnPoints": [
+    { "x": 150, "y": 150 },
+    { "x": 160, "y": 160 },
+    { "x": 170, "y": 170 }
+  ],
+  "npcs": [
+    {
+      "id": "npc-1",
+      "name": "Merchant",
+      "position": { "x": 200, "y": 200 },
+      "type": "merchant",
+      "direction": "down",
+      "properties": {}
+    },
+    {
+      "id": "npc-2",
+      "name": "Guard",
+      "position": { "x": 300, "y": 300 },
+      "type": "guard",
+      "direction": "down",
+      "properties": {}
+    }
+  ],
+  "monsterSpawns": null,
+  "version": "1.0"
+}
+

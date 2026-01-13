@@ -1,0 +1,1555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Level Editor - Ragnarok Zone Server</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        .sidebar {
+            width: 300px;
+            background: #2a2a2a;
+            border-right: 1px solid #444;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .toolbar {
+            background: #2a2a2a;
+            padding: 10px 20px;
+            border-bottom: 1px solid #444;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .canvas-container {
+            flex: 1;
+            overflow: auto;
+            background: #1a1a1a;
+            position: relative;
+        }
+        
+        #mapCanvas {
+            display: block;
+            cursor: crosshair;
+        }
+        
+        h1 {
+            font-size: 20px;
+            margin-bottom: 20px;
+            color: #4a9eff;
+        }
+        
+        h2 {
+            font-size: 16px;
+            margin: 20px 0 10px 0;
+            color: #6ab7ff;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            color: #ccc;
+        }
+        
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            background: #333;
+            border: 1px solid #555;
+            color: #e0e0e0;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #4a9eff;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background: #4a9eff;
+            border: none;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        
+        button:hover {
+            background: #5ab0ff;
+        }
+        
+        button.danger {
+            background: #e74c3c;
+        }
+        
+        button.danger:hover {
+            background: #c0392b;
+        }
+        
+        button.secondary {
+            background: #555;
+        }
+        
+        button.secondary:hover {
+            background: #666;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .tool-button {
+            padding: 8px 16px;
+            font-size: 12px;
+        }
+        
+        .tool-button.active {
+            background: #6ab7ff;
+        }
+        
+        .entity-list {
+            max-height: 200px;
+            overflow-y: auto;
+            background: #333;
+            border-radius: 4px;
+            padding: 10px;
+        }
+        
+        .entity-item {
+            padding: 8px;
+            margin-bottom: 5px;
+            background: #444;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .entity-item:hover {
+            background: #555;
+        }
+        
+        .entity-item.selected {
+            background: #4a9eff;
+        }
+        
+        .status {
+            padding: 10px;
+            background: #333;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+        
+        .status.success {
+            background: #27ae60;
+        }
+        
+        .status.error {
+            background: #e74c3c;
+        }
+        
+        .grid-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+        
+        .zoom-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #2a2a2a;
+            padding: 10px;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .zoom-controls button {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h1>Level Editor</h1>
+            
+            <div class="form-group">
+                <label>Map Name:</label>
+                <input type="text" id="mapName" placeholder="e.g., prontera">
+            </div>
+            
+            <div class="form-group">
+                <label>Display Name:</label>
+                <input type="text" id="displayName" placeholder="e.g., Prontera - Capital City">
+            </div>
+            
+            <div class="form-group">
+                <label>Description:</label>
+                <textarea id="description" rows="3" placeholder="Optional description"></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Width (tiles):</label>
+                <input type="number" id="mapWidth" value="100" min="10" max="2000" onchange="updateMapSize()">
+            </div>
+            
+            <div class="form-group">
+                <label>Height (tiles):</label>
+                <input type="number" id="mapHeight" value="100" min="10" max="2000" onchange="updateMapSize()">
+            </div>
+            
+            <div class="form-group">
+                <label>Tile Size (pixels):</label>
+                <input type="number" id="tileSize" value="32" min="16" max="64" onchange="updateMapSize()">
+            </div>
+            
+            <div class="form-group">
+                <button onclick="updateMapSize()" class="secondary" style="width: 100%;">Apply Size Changes</button>
+            </div>
+            
+            <h2>Tools</h2>
+            <div class="button-group">
+                <button class="tool-button active" data-tool="collision" id="toolCollision">Collision</button>
+                <button class="tool-button" data-tool="terrain" id="toolTerrain">Terrain</button>
+                <button class="tool-button" data-tool="spawn" id="toolSpawn">Spawn</button>
+                <button class="tool-button" data-tool="npc" id="toolNPC">NPC</button>
+            </div>
+            
+            <h2>Terrain</h2>
+            <div class="form-group">
+                <label>Max Height:</label>
+                <input type="number" id="maxHeight" value="2" min="0.1" max="15" step="0.1">
+            </div>
+            <div class="form-group">
+                <label>Noise Seed:</label>
+                <input type="number" id="noiseSeed" value="12345" min="0">
+            </div>
+            <div class="button-group">
+                <button onclick="generateTerrain()" class="tool-button">Generate Terrain</button>
+                <button onclick="clearTerrain()" class="tool-button secondary">Clear</button>
+            </div>
+            <div class="form-group" style="margin-top: 10px;">
+                <label>
+                    <input type="checkbox" id="showTerrain" checked onchange="drawMap()">
+                    Show Terrain Heightmap
+                </label>
+            </div>
+            
+            <h2>Spawn Points</h2>
+            <div class="entity-list" id="spawnList"></div>
+            <button class="tool-button" onclick="addSpawnPoint()">Add Spawn Point</button>
+            
+            <h2>NPCs</h2>
+            <div class="entity-list" id="npcList"></div>
+            <button class="tool-button" onclick="addNPC()">Add NPC</button>
+            
+            <div id="npcEditor" style="display: none; margin-top: 15px; padding: 10px; background: #333; border-radius: 4px;">
+                <h3 style="font-size: 14px; margin-bottom: 10px;">Edit NPC</h3>
+                <div class="form-group">
+                    <label>NPC ID:</label>
+                    <input type="text" id="npcId" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Name:</label>
+                    <input type="text" id="npcName">
+                </div>
+                <div class="form-group">
+                    <label>Type:</label>
+                    <select id="npcType">
+                        <option value="merchant">Merchant</option>
+                        <option value="quest">Quest</option>
+                        <option value="guard">Guard</option>
+                        <option value="healer">Healer</option>
+                        <option value="warp">Warp</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Direction:</label>
+                    <select id="npcDirection">
+                        <option value="up">Up</option>
+                        <option value="down">Down</option>
+                        <option value="left">Left</option>
+                        <option value="right">Right</option>
+                    </select>
+                </div>
+                <div class="button-group">
+                    <button onclick="saveNPC()">Save</button>
+                    <button onclick="cancelNPCEdit()" class="secondary">Cancel</button>
+                </div>
+            </div>
+            
+            <h2>Actions</h2>
+            <div class="button-group">
+                <button onclick="loadMap()">Load Map</button>
+                <button onclick="saveMap()">Save Map</button>
+                <button onclick="validateMap()">Validate</button>
+                <button onclick="fixInvalidSpawnPoints()" class="secondary">Fix Invalid Spawns</button>
+                <button onclick="newMap()" class="secondary">New Map</button>
+            </div>
+            
+            <div id="status"></div>
+        </div>
+        
+        <div class="main-content">
+            <div class="toolbar">
+                <select id="mapSelect">
+                    <option value="">Select a map to load...</option>
+                </select>
+                <button onclick="loadMapList()">Refresh Maps</button>
+                <span style="margin-left: auto; padding: 0 20px;">
+                    Zoom: <span id="zoomLevel">100%</span>
+                </span>
+            </div>
+            
+            <div class="canvas-container">
+                <div class="zoom-controls">
+                    <button onclick="zoomIn()">+</button>
+                    <button onclick="zoomOut()">-</button>
+                    <button onclick="resetZoom()">Reset</button>
+                </div>
+                <canvas id="mapCanvas"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = '/api/maps';
+        let currentTool = 'collision';
+        let currentMap = null;
+        let zoom = 1.0;
+        let canvas, ctx;
+        let mapWidth = 100, mapHeight = 100, tileSize = 32;
+        let collisionData = [];
+        let heightMap = null; // FloatArray for terrain heights
+        let spawnPoints = [];
+        let npcs = [];
+        let isDrawing = false;
+        let selectedNPC = null;
+        let lastDrawnTile = { x: -1, y: -1 };
+        let animationFrameId = null;
+        let needsRedraw = false;
+        let gridCache = null;
+        let showTerrain = true;
+        
+        // Initialize canvas
+        function initCanvas() {
+            canvas = document.getElementById('mapCanvas');
+            ctx = canvas.getContext('2d');
+            updateCanvasSize();
+            drawMap();
+            
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mousemove', handleMouseMoveThrottled);
+            canvas.addEventListener('mousemove', handleMouseMoveHover);
+            canvas.addEventListener('mouseup', handleMouseUp);
+            canvas.addEventListener('mouseleave', handleMouseLeave);
+            canvas.addEventListener('contextmenu', e => e.preventDefault());
+        }
+        
+        function updateCanvasSize() {
+            const container = canvas.parentElement;
+            canvas.width = mapWidth * tileSize * zoom;
+            canvas.height = mapHeight * tileSize * zoom;
+            gridCache = null; // Invalidate grid cache
+            needsRedraw = true;
+        }
+        
+        function drawGrid() {
+            // Only draw grid for smaller maps or when zoomed in
+            const shouldDrawGrid = mapWidth <= 200 && mapHeight <= 200 && zoom >= 0.5;
+            
+            if (!shouldDrawGrid) {
+                return;
+            }
+            
+            // Check if we can use cached grid
+            const cacheKey = `${mapWidth}x${mapHeight}x${zoom}`;
+            if (gridCache && gridCache.key === cacheKey) {
+                ctx.drawImage(gridCache.canvas, 0, 0);
+                return;
+            }
+            
+            // Draw grid to temporary canvas for caching
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            tempCtx.strokeStyle = '#333';
+            tempCtx.lineWidth = 1;
+            for (let x = 0; x <= mapWidth; x++) {
+                tempCtx.beginPath();
+                tempCtx.moveTo(x * tileSize * zoom, 0);
+                tempCtx.lineTo(x * tileSize * zoom, mapHeight * tileSize * zoom);
+                tempCtx.stroke();
+            }
+            for (let y = 0; y <= mapHeight; y++) {
+                tempCtx.beginPath();
+                tempCtx.moveTo(0, y * tileSize * zoom);
+                tempCtx.lineTo(mapWidth * tileSize * zoom, y * tileSize * zoom);
+                tempCtx.stroke();
+            }
+            
+            // Cache grid
+            gridCache = {
+                canvas: tempCanvas,
+                key: cacheKey
+            };
+            
+            ctx.drawImage(tempCanvas, 0, 0);
+        }
+        
+        function drawTile(x, y) {
+            const index = y * mapWidth + x;
+            const px = x * tileSize * zoom;
+            const py = y * tileSize * zoom;
+            const size = tileSize * zoom;
+            
+            // Clear tile area
+            ctx.clearRect(px, py, size, size);
+            
+            // Redraw grid lines if needed
+            if (mapWidth <= 200 && mapHeight <= 200 && zoom >= 0.5) {
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(px, py);
+                ctx.lineTo(px + size, py);
+                ctx.lineTo(px + size, py + size);
+                ctx.lineTo(px, py + size);
+                ctx.lineTo(px, py);
+                ctx.stroke();
+            }
+            
+            // Draw collision if blocked
+            if (collisionData[index] === false) {
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                ctx.fillRect(px, py, size, size);
+            }
+        }
+        
+        function drawMap() {
+            if (animationFrameId) {
+                needsRedraw = true;
+                return;
+            }
+            
+            animationFrameId = requestAnimationFrame(() => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw grid (cached for performance)
+                drawGrid();
+                
+                // Draw terrain heightmap if enabled
+            if (showTerrain && heightMap) {
+                const maxHeight = parseFloat(document.getElementById('maxHeight').value) || 2;
+                for (let y = 0; y < mapHeight; y++) {
+                    for (let x = 0; x < mapWidth; x++) {
+                        const index = y * mapWidth + x;
+                        const height = heightMap[index] || 0;
+                        const normalizedHeight = Math.min(height / maxHeight, 1);
+                        
+                        // Color gradient: dark green (low) -> light green -> brown -> gray (high)
+                        let r, g, b;
+                        if (normalizedHeight < 0.3) {
+                            // Low: dark green
+                            r = 34 + normalizedHeight * 50;
+                            g = 139 + normalizedHeight * 50;
+                            b = 34;
+                        } else if (normalizedHeight < 0.6) {
+                            // Mid: light green to brown
+                            const t = (normalizedHeight - 0.3) / 0.3;
+                            r = 84 + t * 100;
+                            g = 189 + t * 20;
+                            b = 34 - t * 20;
+                        } else {
+                            // High: brown to gray
+                            const t = (normalizedHeight - 0.6) / 0.4;
+                            r = 184 + t * 50;
+                            g = 209 - t * 50;
+                            b = 14 + t * 100;
+                        }
+                        
+                        ctx.fillStyle = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
+                        ctx.fillRect(x * tileSize * zoom, y * tileSize * zoom, tileSize * zoom, tileSize * zoom);
+                    }
+                }
+            }
+            
+            // Draw collision tiles (only blocked ones) - overlay on terrain
+            for (let y = 0; y < mapHeight; y++) {
+                for (let x = 0; x < mapWidth; x++) {
+                    const index = y * mapWidth + x;
+                    if (collisionData[index] === false) {
+                        ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                        ctx.fillRect(x * tileSize * zoom, y * tileSize * zoom, tileSize * zoom, tileSize * zoom);
+                    }
+                }
+            }
+            
+            // Draw hover feedback for spawn/NPC tools
+            if ((currentTool === 'spawn' || currentTool === 'npc') && hoverTile.x >= 0 && hoverTile.y >= 0) {
+                const walkable = isWalkable(hoverTile.x, hoverTile.y);
+                ctx.strokeStyle = walkable ? 'rgba(0, 255, 0, 0.5)' : 'rgba(255, 0, 0, 0.5)';
+                ctx.lineWidth = 3 * zoom;
+                ctx.strokeRect(
+                    hoverTile.x * tileSize * zoom,
+                    hoverTile.y * tileSize * zoom,
+                    tileSize * zoom,
+                    tileSize * zoom
+                );
+            }
+            
+            // Draw spawn points
+            spawnPoints.forEach((spawn, index) => {
+                // Check if spawn point is on walkable tile
+                const walkable = isWalkable(spawn.x, spawn.y);
+                ctx.fillStyle = walkable ? '#00ff00' : '#ff6600'; // Green if walkable, orange if not
+                ctx.beginPath();
+                ctx.arc(
+                    spawn.x * tileSize * zoom + (tileSize * zoom) / 2,
+                    spawn.y * tileSize * zoom + (tileSize * zoom) / 2,
+                    (tileSize * zoom) / 3,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                // Draw warning border if not walkable
+                if (!walkable) {
+                    ctx.strokeStyle = '#ff0000';
+                    ctx.lineWidth = 2 * zoom;
+                    ctx.stroke();
+                }
+                ctx.fillStyle = '#000';
+                ctx.font = `${12 * zoom}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.fillText(index.toString(), spawn.x * tileSize * zoom + (tileSize * zoom) / 2, spawn.y * tileSize * zoom + (tileSize * zoom) / 2 + 4 * zoom);
+            });
+            
+            // Draw NPCs
+            npcs.forEach(npc => {
+                // Check if NPC is on walkable tile
+                const walkable = isWalkable(npc.position.x, npc.position.y);
+                ctx.fillStyle = npc === selectedNPC ? '#ffff00' : (walkable ? '#0099ff' : '#ff6600');
+                ctx.beginPath();
+                ctx.arc(
+                    npc.position.x * tileSize * zoom + (tileSize * zoom) / 2,
+                    npc.position.y * tileSize * zoom + (tileSize * zoom) / 2,
+                    (tileSize * zoom) / 3,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                // Draw warning border if not walkable
+                if (!walkable) {
+                    ctx.strokeStyle = '#ff0000';
+                    ctx.lineWidth = 2 * zoom;
+                    ctx.stroke();
+                }
+                ctx.fillStyle = '#fff';
+                ctx.font = `${10 * zoom}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.fillText(npc.name.substring(0, 3), npc.position.x * tileSize * zoom + (tileSize * zoom) / 2, npc.position.y * tileSize * zoom + (tileSize * zoom) / 2 + 3 * zoom);
+            });
+            
+                animationFrameId = null;
+                if (needsRedraw) {
+                    needsRedraw = false;
+                    drawMap();
+                }
+            });
+        }
+        
+        function getTileFromMouse(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor((e.clientX - rect.left) / (tileSize * zoom));
+            const y = Math.floor((e.clientY - rect.top) / (tileSize * zoom));
+            return { x, y };
+        }
+        
+        function handleMouseDown(e) {
+            isDrawing = true;
+            const tile = getTileFromMouse(e);
+            lastDrawnTile = { x: -1, y: -1 };
+            handleTileClick(tile.x, tile.y, e.button === 2);
+        }
+        
+        let mouseMoveThrottle = null;
+        let hoverTile = { x: -1, y: -1 };
+        
+        function handleMouseMoveThrottled(e) {
+            if (!isDrawing || currentTool !== 'collision') return;
+            
+            if (mouseMoveThrottle) {
+                return;
+            }
+            
+            mouseMoveThrottle = requestAnimationFrame(() => {
+                const tile = getTileFromMouse(e);
+                // Only update if tile changed
+                if (tile.x !== lastDrawnTile.x || tile.y !== lastDrawnTile.y) {
+                    handleTileClick(tile.x, tile.y, e.button === 2);
+                    lastDrawnTile = tile;
+                }
+                mouseMoveThrottle = null;
+            });
+        }
+        
+        function handleMouseMoveHover(e) {
+            const tile = getTileFromMouse(e);
+            if (tile.x !== hoverTile.x || tile.y !== hoverTile.y) {
+                hoverTile = tile;
+                // Redraw to show hover feedback
+                if (currentTool === 'spawn' || currentTool === 'npc') {
+                    drawMap();
+                }
+            }
+        }
+        
+        function handleMouseLeave(e) {
+            hoverTile = { x: -1, y: -1 };
+            drawMap();
+        }
+        
+        function handleMouseUp(e) {
+            isDrawing = false;
+            lastDrawnTile = { x: -1, y: -1 };
+        }
+        
+        // Helper function to check if a tile is walkable
+        function isWalkable(x, y) {
+            if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) return false;
+            const index = y * mapWidth + x;
+            return collisionData[index] === true; // true = walkable, false = blocked
+        }
+        
+        // Find nearest walkable tile using spiral search
+        function findNearestWalkableTile(startX, startY, maxRadius = 20) {
+            if (isWalkable(startX, startY)) {
+                return { x: startX, y: startY };
+            }
+            
+            // Spiral search outward
+            for (let radius = 1; radius <= maxRadius; radius++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    for (let dy = -radius; dy <= radius; dy++) {
+                        // Only check tiles on the edge of current radius
+                        if (Math.abs(dx) === radius || Math.abs(dy) === radius) {
+                            const nx = startX + dx;
+                            const ny = startY + dy;
+                            if (isWalkable(nx, ny)) {
+                                return { x: nx, y: ny };
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // If no walkable tile found, return null
+            return null;
+        }
+        
+        function handleTileClick(x, y, rightClick) {
+            if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) return;
+            
+            if (currentTool === 'terrain') {
+                if (!heightMap) {
+                    heightMap = new Array(mapWidth * mapHeight).fill(0);
+                }
+                const index = y * mapWidth + x;
+                const maxHeight = parseFloat(document.getElementById('maxHeight').value) || 2;
+                const step = maxHeight / 10;
+                
+                if (rightClick) {
+                    // Decrease height
+                    heightMap[index] = Math.max(0, heightMap[index] - step);
+                } else {
+                    // Increase height
+                    heightMap[index] = Math.min(maxHeight, heightMap[index] + step);
+                }
+                
+                drawTile(x, y);
+            } else if (currentTool === 'collision') {
+                const index = y * mapWidth + x;
+                const oldValue = collisionData[index];
+                collisionData[index] = rightClick ? true : false;
+                
+                // Only redraw if value changed
+                if (oldValue !== collisionData[index]) {
+                    drawTile(x, y);
+                    
+                    // Redraw entities that might overlap this tile
+                    const px = x * tileSize * zoom;
+                    const py = y * tileSize * zoom;
+                    const size = tileSize * zoom;
+                    
+                    // Redraw spawn points
+                    spawnPoints.forEach((spawn, idx) => {
+                        if (spawn.x === x && spawn.y === y) {
+                            ctx.fillStyle = '#00ff00';
+                            ctx.beginPath();
+                            ctx.arc(
+                                spawn.x * tileSize * zoom + (tileSize * zoom) / 2,
+                                spawn.y * tileSize * zoom + (tileSize * zoom) / 2,
+                                (tileSize * zoom) / 3,
+                                0,
+                                Math.PI * 2
+                            );
+                            ctx.fill();
+                            ctx.fillStyle = '#000';
+                            ctx.font = `${12 * zoom}px Arial`;
+                            ctx.textAlign = 'center';
+                            ctx.fillText(idx.toString(), spawn.x * tileSize * zoom + (tileSize * zoom) / 2, spawn.y * tileSize * zoom + (tileSize * zoom) / 2 + 4 * zoom);
+                        }
+                    });
+                    
+                    // Redraw NPCs
+                    npcs.forEach(npc => {
+                        if (npc.position.x === x && npc.position.y === y) {
+                            ctx.fillStyle = npc === selectedNPC ? '#ffff00' : '#0099ff';
+                            ctx.beginPath();
+                            ctx.arc(
+                                npc.position.x * tileSize * zoom + (tileSize * zoom) / 2,
+                                npc.position.y * tileSize * zoom + (tileSize * zoom) / 2,
+                                (tileSize * zoom) / 3,
+                                0,
+                                Math.PI * 2
+                            );
+                            ctx.fill();
+                            ctx.fillStyle = '#fff';
+                            ctx.font = `${10 * zoom}px Arial`;
+                            ctx.textAlign = 'center';
+                            ctx.fillText(npc.name.substring(0, 3), npc.position.x * tileSize * zoom + (tileSize * zoom) / 2, npc.position.y * tileSize * zoom + (tileSize * zoom) / 2 + 3 * zoom);
+                        }
+                    });
+                }
+            } else if (currentTool === 'spawn') {
+                if (!rightClick) {
+                    // Check if tile is walkable
+                    if (!isWalkable(x, y)) {
+                        // Try to find nearest walkable tile
+                        const nearest = findNearestWalkableTile(x, y);
+                        if (nearest) {
+                            spawnPoints.push({ x: nearest.x, y: nearest.y });
+                            showStatus(`Spawn point placed at (${nearest.x}, ${nearest.y}) - moved from non-walkable tile`, 'success');
+                        } else {
+                            showStatus('Cannot place spawn point: no walkable tiles nearby. Please mark tiles as walkable first.', 'error');
+                            return;
+                        }
+                    } else {
+                        spawnPoints.push({ x, y });
+                        showStatus(`Spawn point added at (${x}, ${y})`, 'success');
+                    }
+                    updateSpawnList();
+                    drawMap();
+                } else {
+                    // Right-click to remove spawn point at this location
+                    const index = spawnPoints.findIndex(sp => sp.x === x && sp.y === y);
+                    if (index !== -1) {
+                        spawnPoints.splice(index, 1);
+                        updateSpawnList();
+                        drawMap();
+                        showStatus('Spawn point removed', 'success');
+                    }
+                }
+            } else if (currentTool === 'npc') {
+                if (!rightClick) {
+                    // Check if clicking on existing NPC
+                    const clickedNPC = npcs.find(npc => 
+                        npc.position.x === x && npc.position.y === y
+                    );
+                    
+                    if (clickedNPC) {
+                        // Select existing NPC
+                        selectedNPC = clickedNPC;
+                        updateNPCList();
+                        showNPCEditor(clickedNPC);
+                        drawMap();
+                    } else {
+                        // Check if tile is walkable before placing NPC
+                        if (!isWalkable(x, y)) {
+                            const nearest = findNearestWalkableTile(x, y);
+                            if (nearest) {
+                                x = nearest.x;
+                                y = nearest.y;
+                                showStatus(`NPC placed at (${x}, ${y}) - moved from non-walkable tile`, 'success');
+                            } else {
+                                showStatus('Cannot place NPC: no walkable tiles nearby. Please mark tiles as walkable first.', 'error');
+                                return;
+                            }
+                        }
+                        
+                        // Create new NPC
+                        const npcId = 'npc-' + Date.now();
+                        const newNPC = {
+                            id: npcId,
+                            name: 'NPC',
+                            position: { x, y },
+                            type: 'merchant',
+                            direction: 'down',
+                            properties: {}
+                        };
+                        npcs.push(newNPC);
+                        selectedNPC = newNPC;
+                        updateNPCList();
+                        showNPCEditor(newNPC);
+                        drawMap();
+                    }
+                } else {
+                    // Right-click to remove NPC at position
+                    const index = npcs.findIndex(npc => 
+                        npc.position.x === x && npc.position.y === y
+                    );
+                    if (index !== -1) {
+                        if (selectedNPC === npcs[index]) {
+                            cancelNPCEdit();
+                        }
+                        npcs.splice(index, 1);
+                        updateNPCList();
+                        drawMap();
+                    }
+                }
+            }
+        }
+        
+        // Tool selection
+        document.querySelectorAll('.tool-button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tool-button').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentTool = btn.dataset.tool;
+            });
+        });
+        
+        // Map operations
+        function newMap() {
+            const name = document.getElementById('mapName').value || 'new-map';
+            const width = parseInt(document.getElementById('mapWidth').value) || 100;
+            const height = parseInt(document.getElementById('mapHeight').value) || 100;
+            const size = parseInt(document.getElementById('tileSize').value) || 32;
+            
+            mapWidth = width;
+            mapHeight = height;
+            tileSize = size;
+            
+            collisionData = new Array(width * height).fill(true);
+            heightMap = null;
+            spawnPoints = [];
+            npcs = [];
+            selectedNPC = null;
+            
+            updateCanvasSize();
+            drawMap();
+            updateSpawnList();
+            updateNPCList();
+            
+            showStatus('New map created', 'success');
+        }
+        
+        async function loadMapList() {
+            try {
+                const response = await fetch(API_BASE);
+                const result = await response.json();
+                
+                const select = document.getElementById('mapSelect');
+                select.innerHTML = '<option value="">Select a map to load...</option>';
+                
+                if (result.success && result.data) {
+                    result.data.forEach(mapName => {
+                        const option = document.createElement('option');
+                        option.value = mapName;
+                        option.textContent = mapName;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                showStatus('Failed to load map list: ' + error.message, 'error');
+            }
+        }
+        
+        async function loadMap() {
+            const mapName = document.getElementById('mapSelect').value || document.getElementById('mapName').value;
+            if (!mapName) {
+                showStatus('Please enter or select a map name', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/${mapName}`);
+                const result = await response.json();
+                
+                if (!result.success) {
+                    showStatus('Failed to load map: ' + result.error, 'error');
+                    return;
+                }
+                
+                const mapData = result.data;
+                currentMap = mapData;
+                
+                // Update form fields
+                document.getElementById('mapName').value = mapData.name;
+                document.getElementById('displayName').value = mapData.displayName || '';
+                document.getElementById('description').value = mapData.description || '';
+                document.getElementById('mapWidth').value = mapData.width;
+                document.getElementById('mapHeight').value = mapData.height;
+                document.getElementById('tileSize').value = mapData.tileSize || 32;
+                
+                mapWidth = mapData.width;
+                mapHeight = mapData.height;
+                tileSize = mapData.tileSize || 32;
+                
+                // Decode collision map
+                try {
+                    const collisionMap = decodeCollisionMap(mapData.collisionMap.data, mapData.collisionMap.width, mapData.collisionMap.height);
+                    collisionData = collisionMap;
+                } catch (e) {
+                    collisionData = new Array(mapWidth * mapHeight).fill(true);
+                    showStatus('Warning: Could not decode collision map', 'error');
+                }
+                
+                // Decode heightmap if present
+                if (mapData.heightMap) {
+                    try {
+                        heightMap = decodeHeightMap(mapData.heightMap.data, mapData.heightMap.width, mapData.heightMap.height);
+                        document.getElementById('maxHeight').value = mapData.heightMap.maxHeight || 2;
+                    } catch (e) {
+                        heightMap = null;
+                        showStatus('Warning: Could not decode heightmap', 'error');
+                    }
+                } else {
+                    heightMap = null;
+                }
+                
+                spawnPoints = mapData.spawnPoints || [];
+                npcs = mapData.npcs || [];
+                selectedNPC = null;
+                
+                // Validate spawn points and NPCs on load
+                let invalidSpawns = 0;
+                spawnPoints.forEach(spawn => {
+                    if (!isWalkable(spawn.x, spawn.y)) {
+                        invalidSpawns++;
+                    }
+                });
+                npcs.forEach(npc => {
+                    if (!isWalkable(npc.position.x, npc.position.y)) {
+                        invalidSpawns++;
+                    }
+                });
+                
+                if (invalidSpawns > 0) {
+                    showStatus(`Warning: ${invalidSpawns} spawn point(s) or NPC(s) on non-walkable tiles. Use "Fix Invalid Spawns" button to fix them.`, 'error');
+                }
+                
+                updateCanvasSize();
+                drawMap();
+                updateSpawnList();
+                updateNPCList();
+                
+                if (invalidSpawns === 0) {
+                    showStatus('Map loaded successfully', 'success');
+                }
+            } catch (error) {
+                showStatus('Failed to load map: ' + error.message, 'error');
+            }
+        }
+        
+        async function saveMap() {
+            const mapName = document.getElementById('mapName').value;
+            if (!mapName) {
+                showStatus('Please enter a map name', 'error');
+                return;
+            }
+            
+            try {
+                const mapData = {
+                    name: mapName,
+                    displayName: document.getElementById('displayName').value || mapName,
+                    description: document.getElementById('description').value || null,
+                    width: mapWidth,
+                    height: mapHeight,
+                    tileSize: tileSize,
+                    collisionMap: {
+                        width: mapWidth,
+                        height: mapHeight,
+                        data: encodeCollisionMap(collisionData, mapWidth, mapHeight)
+                    },
+                    heightMap: heightMap ? {
+                        width: mapWidth,
+                        height: mapHeight,
+                        data: encodeHeightMap(heightMap, mapWidth, mapHeight),
+                        maxHeight: parseFloat(document.getElementById('maxHeight').value) || 2
+                    } : null,
+                    spawnPoints: spawnPoints,
+                    npcs: npcs,
+                    monsterSpawns: null,
+                    version: '1.0'
+                };
+                
+                const exists = currentMap && currentMap.name === mapName;
+                const url = exists ? `${API_BASE}/${mapName}` : API_BASE;
+                const method = exists ? 'PUT' : 'POST';
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(mapData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showStatus('Map saved successfully', 'success');
+                    await loadMapList();
+                } else {
+                    let errorMsg = result.error || 'Unknown error';
+                    // Show validation errors if available
+                    if (result.data && result.data.errors && Array.isArray(result.data.errors)) {
+                        errorMsg += ': ' + result.data.errors.join(', ');
+                    }
+                    showStatus('Failed to save map: ' + errorMsg, 'error');
+                }
+            } catch (error) {
+                showStatus('Failed to save map: ' + error.message, 'error');
+            }
+        }
+        
+        async function validateMap() {
+            const mapName = document.getElementById('mapName').value;
+            if (!mapName) {
+                showStatus('Please enter a map name', 'error');
+                return;
+            }
+            
+            try {
+                const mapData = {
+                    name: mapName,
+                    displayName: document.getElementById('displayName').value || mapName,
+                    description: document.getElementById('description').value || null,
+                    width: mapWidth,
+                    height: mapHeight,
+                    tileSize: tileSize,
+                    collisionMap: {
+                        width: mapWidth,
+                        height: mapHeight,
+                        data: encodeCollisionMap(collisionData, mapWidth, mapHeight)
+                    },
+                    heightMap: heightMap ? {
+                        width: mapWidth,
+                        height: mapHeight,
+                        data: encodeHeightMap(heightMap, mapWidth, mapHeight),
+                        maxHeight: parseFloat(document.getElementById('maxHeight').value) || 2
+                    } : null,
+                    spawnPoints: spawnPoints,
+                    npcs: npcs,
+                    monsterSpawns: null,
+                    version: '1.0'
+                };
+                
+                const response = await fetch(`${API_BASE}/${mapName}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(mapData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success && result.data) {
+                    const validation = result.data;
+                    if (validation.isValid) {
+                        showStatus('Map is valid!', 'success');
+                    } else {
+                        showStatus('Validation errors: ' + validation.errors.join(', '), 'error');
+                    }
+                } else {
+                    showStatus('Validation failed: ' + (result.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showStatus('Validation error: ' + error.message, 'error');
+            }
+        }
+        
+        // Collision map encoding/decoding
+        // Server format: true (walkable) = bit 1, false (blocked) = bit 0
+        function encodeCollisionMap(data, width, height) {
+            const bytes = new Uint8Array(Math.ceil((width * height) / 8));
+            for (let i = 0; i < data.length; i++) {
+                if (data[i] === true) { // walkable - set bit to 1
+                    const byteIndex = Math.floor(i / 8);
+                    const bitIndex = 7 - (i % 8);
+                    bytes[byteIndex] |= (1 << bitIndex);
+                }
+                // blocked tiles leave bit as 0
+            }
+            return btoa(String.fromCharCode(...bytes));
+        }
+        
+        function decodeCollisionMap(base64, width, height) {
+            const str = atob(base64);
+            const bytes = new Uint8Array(str.length);
+            for (let i = 0; i < str.length; i++) {
+                bytes[i] = str.charCodeAt(i);
+            }
+            
+            const data = new Array(width * height);
+            for (let i = 0; i < data.length; i++) {
+                const byteIndex = Math.floor(i / 8);
+                const bitIndex = 7 - (i % 8);
+                // bit = 1 means walkable (true), bit = 0 means blocked (false)
+                data[i] = (bytes[byteIndex] & (1 << bitIndex)) !== 0;
+            }
+            return data;
+        }
+        
+        // Heightmap encoding/decoding (FloatArray as Base64)
+        function encodeHeightMap(data, width, height) {
+            const buffer = new ArrayBuffer(data.length * 4);
+            const view = new DataView(buffer);
+            for (let i = 0; i < data.length; i++) {
+                view.setFloat32(i * 4, data[i], true); // little-endian
+            }
+            const bytes = new Uint8Array(buffer);
+            return btoa(String.fromCharCode(...bytes));
+        }
+        
+        function decodeHeightMap(base64, width, height) {
+            const str = atob(base64);
+            const buffer = new ArrayBuffer(str.length);
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < str.length; i++) {
+                bytes[i] = str.charCodeAt(i);
+            }
+            
+            const view = new DataView(buffer);
+            const data = new Array(width * height);
+            for (let i = 0; i < data.length; i++) {
+                data[i] = view.getFloat32(i * 4, true); // little-endian
+            }
+            return data;
+        }
+        
+        // Noise generator (similar to client-side implementation)
+        class NoiseGenerator {
+            constructor(seed = 0) {
+                this.seed = seed;
+                this.random = this.seededRandom(seed);
+            }
+            
+            seededRandom(seed) {
+                let value = seed;
+                return () => {
+                    value = (value * 9301 + 49297) % 233280;
+                    return value / 233280;
+                };
+            }
+            
+            hash(x, y) {
+                const n = ((x * 73856093) ^ (y * 19349663) ^ (this.seed * 83492791)) & 0x7FFFFFFF;
+                return (n % 10000) / 10000;
+            }
+            
+            dotGridGradient(ix, iy, x, y) {
+                const angle = this.hash(ix, iy) * 2 * Math.PI;
+                const gx = Math.cos(angle);
+                const gy = Math.sin(angle);
+                return x * gx + y * gy;
+            }
+            
+            smooth(t) {
+                return t * t * (3 - 2 * t);
+            }
+            
+            lerp(a, b, t) {
+                return a + t * (b - a);
+            }
+            
+            noise(x, y, scale = 1) {
+                const nx = x * scale;
+                const ny = y * scale;
+                const ix = Math.floor(nx);
+                const iy = Math.floor(ny);
+                const fx = nx - ix;
+                const fy = ny - iy;
+                
+                const u = this.smooth(fx);
+                const v = this.smooth(fy);
+                
+                const n00 = this.dotGridGradient(ix, iy, fx, fy);
+                const n10 = this.dotGridGradient(ix + 1, iy, fx - 1, fy);
+                const n01 = this.dotGridGradient(ix, iy + 1, fx, fy - 1);
+                const n11 = this.dotGridGradient(ix + 1, iy + 1, fx - 1, fy - 1);
+                
+                const nx0 = this.lerp(n00, n10, u);
+                const nx1 = this.lerp(n01, n11, u);
+                return this.lerp(nx0, nx1, v);
+            }
+            
+            octaveNoise(x, y, octaves = 4, persistence = 0.5, scale = 0.1) {
+                let value = 0;
+                let amplitude = 1;
+                let frequency = scale;
+                let maxValue = 0;
+                
+                for (let i = 0; i < octaves; i++) {
+                    value += this.noise(x, y, frequency) * amplitude;
+                    maxValue += amplitude;
+                    amplitude *= persistence;
+                    frequency *= 2;
+                }
+                
+                return value / maxValue;
+            }
+        }
+        
+        function generateNoiseHeightMap(width, height, maxHeight = 2, seed = 0) {
+            const noiseGen = new NoiseGenerator(seed);
+            const heightMap = new Array(width * height);
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const noiseValue = noiseGen.octaveNoise(x, y, 3, 0.5, 0.05);
+                    const height = (noiseValue + 1) * 0.5 * maxHeight;
+                    heightMap[y * width + x] = height;
+                }
+            }
+            
+            return heightMap;
+        }
+        
+        function generateTerrain() {
+            const maxHeight = parseFloat(document.getElementById('maxHeight').value) || 2;
+            const seed = parseInt(document.getElementById('noiseSeed').value) || 12345;
+            
+            heightMap = generateNoiseHeightMap(mapWidth, mapHeight, maxHeight, seed);
+            drawMap();
+            showStatus('Terrain generated successfully', 'success');
+        }
+        
+        function clearTerrain() {
+            heightMap = null;
+            drawMap();
+            showStatus('Terrain cleared', 'success');
+        }
+        
+        // UI updates
+        function updateSpawnList() {
+            const list = document.getElementById('spawnList');
+            list.innerHTML = '';
+            spawnPoints.forEach((spawn, index) => {
+                const item = document.createElement('div');
+                item.className = 'entity-item';
+                item.innerHTML = `
+                    <span>Spawn ${index} (${spawn.x}, ${spawn.y})</span>
+                    <button onclick="removeSpawnPoint(${index})" style="padding: 2px 8px; font-size: 10px;">×</button>
+                `;
+                list.appendChild(item);
+            });
+        }
+        
+        function updateNPCList() {
+            const list = document.getElementById('npcList');
+            list.innerHTML = '';
+            npcs.forEach((npc, index) => {
+                const item = document.createElement('div');
+                item.className = 'entity-item' + (npc === selectedNPC ? ' selected' : '');
+                item.innerHTML = `
+                    <span>${npc.name} (${npc.position.x}, ${npc.position.y})</span>
+                    <button onclick="removeNPC(${index})" style="padding: 2px 8px; font-size: 10px;">×</button>
+                `;
+                item.onclick = (e) => {
+                    if (e.target.tagName !== 'BUTTON') {
+                        selectedNPC = npc;
+                        updateNPCList();
+                        showNPCEditor(npc);
+                        drawMap();
+                    }
+                };
+                list.appendChild(item);
+            });
+        }
+        
+        function showNPCEditor(npc) {
+            document.getElementById('npcId').value = npc.id;
+            document.getElementById('npcName').value = npc.name;
+            document.getElementById('npcType').value = npc.type || 'merchant';
+            document.getElementById('npcDirection').value = npc.direction || 'down';
+            document.getElementById('npcEditor').style.display = 'block';
+        }
+        
+        function saveNPC() {
+            if (!selectedNPC) return;
+            
+            selectedNPC.name = document.getElementById('npcName').value || 'NPC';
+            selectedNPC.type = document.getElementById('npcType').value;
+            selectedNPC.direction = document.getElementById('npcDirection').value;
+            
+            updateNPCList();
+            drawMap();
+            cancelNPCEdit();
+            showStatus('NPC updated', 'success');
+        }
+        
+        function cancelNPCEdit() {
+            document.getElementById('npcEditor').style.display = 'none';
+            selectedNPC = null;
+            updateNPCList();
+            drawMap();
+        }
+        
+        function addSpawnPoint() {
+            const centerX = Math.floor(mapWidth / 2);
+            const centerY = Math.floor(mapHeight / 2);
+            
+            // Find walkable tile near center
+            const nearest = findNearestWalkableTile(centerX, centerY);
+            if (nearest) {
+                spawnPoints.push({ x: nearest.x, y: nearest.y });
+                updateSpawnList();
+                drawMap();
+                showStatus(`Spawn point added at (${nearest.x}, ${nearest.y})`, 'success');
+            } else {
+                showStatus('Cannot add spawn point: no walkable tiles found. Please mark some tiles as walkable first.', 'error');
+            }
+        }
+        
+        function removeSpawnPoint(index) {
+            spawnPoints.splice(index, 1);
+            updateSpawnList();
+            drawMap();
+        }
+        
+        function addNPC() {
+            const centerX = Math.floor(mapWidth / 2);
+            const centerY = Math.floor(mapHeight / 2);
+            
+            // Find walkable tile near center
+            const nearest = findNearestWalkableTile(centerX, centerY);
+            if (nearest) {
+                const npcId = 'npc-' + Date.now();
+                npcs.push({
+                    id: npcId,
+                    name: 'NPC',
+                    position: { x: nearest.x, y: nearest.y },
+                    type: 'merchant',
+                    direction: 'down',
+                    properties: {}
+                });
+                updateNPCList();
+                drawMap();
+                showStatus(`NPC added at (${nearest.x}, ${nearest.y})`, 'success');
+            } else {
+                showStatus('Cannot add NPC: no walkable tiles found. Please mark some tiles as walkable first.', 'error');
+            }
+        }
+        
+        function removeNPC(index) {
+            if (selectedNPC === npcs[index]) {
+                cancelNPCEdit();
+            }
+            npcs.splice(index, 1);
+            updateNPCList();
+            drawMap();
+        }
+        
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = 'status ' + (type || '');
+            setTimeout(() => {
+                status.textContent = '';
+                status.className = 'status';
+            }, 5000);
+        }
+        
+        function fixInvalidSpawnPoints() {
+            let fixed = 0;
+            const fixedSpawns = [];
+            
+            spawnPoints.forEach((spawn, index) => {
+                if (!isWalkable(spawn.x, spawn.y)) {
+                    const nearest = findNearestWalkableTile(spawn.x, spawn.y);
+                    if (nearest) {
+                        fixedSpawns.push({ index, old: spawn, new: nearest });
+                        spawn.x = nearest.x;
+                        spawn.y = nearest.y;
+                        fixed++;
+                    } else {
+                        // Remove spawn point if no walkable tile found
+                        spawnPoints.splice(index - fixedSpawns.length, 1);
+                        fixedSpawns.push({ index, old: spawn, new: null, removed: true });
+                        fixed++;
+                    }
+                }
+            });
+            
+            // Fix NPCs too
+            npcs.forEach((npc, index) => {
+                if (!isWalkable(npc.position.x, npc.position.y)) {
+                    const nearest = findNearestWalkableTile(npc.position.x, npc.position.y);
+                    if (nearest) {
+                        npc.position.x = nearest.x;
+                        npc.position.y = nearest.y;
+                        fixed++;
+                    }
+                }
+            });
+            
+            if (fixed > 0) {
+                updateSpawnList();
+                updateNPCList();
+                drawMap();
+                showStatus(`Fixed ${fixed} invalid spawn point(s) and NPC(s)`, 'success');
+            } else {
+                showStatus('All spawn points and NPCs are valid', 'success');
+            }
+        }
+        
+        // Zoom controls
+        function zoomIn() {
+            zoom = Math.min(zoom * 1.2, 5.0);
+            gridCache = null; // Invalidate grid cache
+            updateCanvasSize();
+            drawMap();
+            document.getElementById('zoomLevel').textContent = Math.round(zoom * 100) + '%';
+        }
+        
+        function zoomOut() {
+            zoom = Math.max(zoom / 1.2, 0.1);
+            gridCache = null; // Invalidate grid cache
+            updateCanvasSize();
+            drawMap();
+            document.getElementById('zoomLevel').textContent = Math.round(zoom * 100) + '%';
+        }
+        
+        function resetZoom() {
+            zoom = 1.0;
+            gridCache = null; // Invalidate grid cache
+            updateCanvasSize();
+            drawMap();
+            document.getElementById('zoomLevel').textContent = '100%';
+        }
+        
+        function updateMapSize() {
+            const width = parseInt(document.getElementById('mapWidth').value) || 100;
+            const height = parseInt(document.getElementById('mapHeight').value) || 100;
+            const size = parseInt(document.getElementById('tileSize').value) || 32;
+            
+            // Resize collision data
+            const oldWidth = mapWidth;
+            const oldHeight = mapHeight;
+            const oldCollisionData = [...collisionData];
+            const oldHeightMap = heightMap ? [...heightMap] : null;
+            
+            mapWidth = width;
+            mapHeight = height;
+            tileSize = size;
+            
+            // Create new collision data array
+            collisionData = new Array(width * height);
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const index = y * width + x;
+                    if (x < oldWidth && y < oldHeight) {
+                        const oldIndex = y * oldWidth + x;
+                        collisionData[index] = oldCollisionData[oldIndex];
+                    } else {
+                        collisionData[index] = true; // Default to walkable
+                    }
+                }
+            }
+            
+            // Resize heightmap if present
+            if (oldHeightMap) {
+                heightMap = new Array(width * height);
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        const index = y * width + x;
+                        if (x < oldWidth && y < oldHeight) {
+                            const oldIndex = y * oldWidth + x;
+                            heightMap[index] = oldHeightMap[oldIndex];
+                        } else {
+                            heightMap[index] = 0; // Default height
+                        }
+                    }
+                }
+            }
+            
+            // Remove spawn points and NPCs outside new bounds
+            spawnPoints = spawnPoints.filter(spawn => 
+                spawn.x >= 0 && spawn.x < width && spawn.y >= 0 && spawn.y < height
+            );
+            npcs = npcs.filter(npc => 
+                npc.position.x >= 0 && npc.position.x < width && 
+                npc.position.y >= 0 && npc.position.y < height
+            );
+            
+            if (selectedNPC && !npcs.includes(selectedNPC)) {
+                cancelNPCEdit();
+            }
+            
+            gridCache = null; // Invalidate grid cache
+            updateCanvasSize();
+            drawMap();
+            updateSpawnList();
+            updateNPCList();
+            showStatus('Map size updated', 'success');
+        }
+        
+        // Initialize
+        document.getElementById('mapSelect').addEventListener('change', loadMap);
+        document.getElementById('showTerrain').addEventListener('change', function() {
+            showTerrain = this.checked;
+            drawMap();
+        });
+        loadMapList();
+        initCanvas();
+        newMap();
+    </script>
+</body>
+</html>
+

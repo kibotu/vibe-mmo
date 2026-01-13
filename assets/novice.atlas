@@ -1,0 +1,103 @@
+novice.png
+size: 1536,1024
+format: RGBA8888
+filter: Nearest,Nearest
+repeat: none
+sprite_0
+  rotate: false
+  xy: 580,63
+  size: 144,264
+  orig: 144,264
+  offset: 0,0
+  index: -1
+sprite_1
+  rotate: false
+  xy: 781,63
+  size: 135,264
+  orig: 135,264
+  offset: 0,0
+  index: -1
+sprite_2
+  rotate: false
+  xy: 974,63
+  size: 137,264
+  orig: 137,264
+  offset: 0,0
+  index: -1
+sprite_3
+  rotate: false
+  xy: 1175,63
+  size: 134,261
+  orig: 134,261
+  offset: 0,0
+  index: -1
+sprite_4
+  rotate: false
+  xy: 80,71
+  size: 419,428
+  orig: 419,428
+  offset: 0,0
+  index: -1
+sprite_5
+  rotate: false
+  xy: 974,357
+  size: 140,262
+  orig: 140,262
+  offset: 0,0
+  index: -1
+sprite_6
+  rotate: false
+  xy: 581,359
+  size: 137,260
+  orig: 137,260
+  offset: 0,0
+  index: -1
+sprite_7
+  rotate: false
+  xy: 779,359
+  size: 137,260
+  orig: 137,260
+  offset: 0,0
+  index: -1
+sprite_8
+  rotate: false
+  xy: 1178,359
+  size: 131,258
+  orig: 131,258
+  offset: 0,0
+  index: -1
+sprite_9
+  rotate: false
+  xy: 80,529
+  size: 419,396
+  orig: 419,396
+  offset: 0,0
+  index: -1
+sprite_10
+  rotate: false
+  xy: 581,650
+  size: 140,260
+  orig: 140,260
+  offset: 0,0
+  index: -1
+sprite_11
+  rotate: false
+  xy: 782,651
+  size: 131,260
+  orig: 131,260
+  offset: 0,0
+  index: -1
+sprite_12
+  rotate: false
+  xy: 977,651
+  size: 136,259
+  orig: 136,259
+  offset: 0,0
+  index: -1
+sprite_13
+  rotate: false
+  xy: 1154,771
+  size: 245,112
+  orig: 245,112
+  offset: 0,0
+  index: -1

@@ -27,7 +27,8 @@ class WebSocketHandler(
         classDiscriminator = "type"
         serializersModule = SerializersModule {
             polymorphic(ClientMessage::class) {
-                subclass(ClientMessage.Move::class)
+                subclass(ClientMessage.MoveTo::class)
+                subclass(ClientMessage.MoveDirection::class)
                 subclass(ClientMessage.Chat::class)
             }
             polymorphic(ServerMessage::class) {
@@ -97,6 +98,39 @@ class WebSocketHandler(
                 // Broadcast player joined to others
                 broadcastPlayerJoined(zoneInstance, player, characterId)
                 
+                // Start movement update loop for this player
+                val movementJob = scope.launch {
+                    while (isActive) {
+                        delay(100) // Update movement every 100ms (10 updates per second)
+                        val result = zoneInstance.continuePath(characterId)
+                        if (result != null) {
+                            when (result) {
+                                is net.kibotu.ro.zone.model.ZoneInstance.MoveResult.Success -> {
+                                    val updatedPlayer = zoneInstance.getPlayer(characterId)
+                                    if (updatedPlayer != null) {
+                                        val movementMessage = ServerMessage.Movement(
+                                            characterId = updatedPlayer.characterId,
+                                            position = updatedPlayer.position,
+                                            direction = updatedPlayer.direction
+                                        )
+                                        try {
+                                            sendMessage(movementMessage)
+                                            broadcastMovement(zoneInstance, updatedPlayer, updatedPlayer.position, updatedPlayer.direction, characterId)
+                                        } catch (e: Exception) {
+                                            // Connection closed, stop movement updates
+                                            break
+                                        }
+                                    }
+                                }
+                                is net.kibotu.ro.zone.model.ZoneInstance.MoveResult.Error -> {
+                                    // Path error, stop movement
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 // Handle incoming messages
                 for (frame in incoming) {
                     if (frame is Frame.Text) {
@@ -105,6 +139,9 @@ class WebSocketHandler(
                         break
                     }
                 }
+                
+                // Cancel movement updates when connection closes
+                movementJob.cancel()
             } catch (e: Exception) {
                 // Log error but don't print stack trace in production
             } finally {
@@ -162,32 +199,44 @@ class WebSocketHandler(
             val message = json.decodeFromString(ClientMessage.serializer(), text)
             
             when (message) {
-                is ClientMessage.Move -> {
-                    val currentPlayer = zoneInstance.getPlayer(characterId)
-                    if (currentPlayer == null) {
-                        session.sendMessage(ServerMessage.Error("Player not found in zone"))
-                        return
-                    }
-                    
-                    val success = zoneInstance.updatePlayerPosition(
-                        characterId,
-                        message.position,
-                        message.direction
-                    )
-                    
-                    if (success) {
-                        val updatedPlayer = zoneInstance.getPlayer(characterId)
-                        if (updatedPlayer != null) {
-                            val movementMessage = ServerMessage.Movement(
-                                characterId = updatedPlayer.characterId,
-                                position = updatedPlayer.position,
-                                direction = updatedPlayer.direction
-                            )
-                            session.sendMessage(movementMessage)
-                            broadcastMovement(zoneInstance, updatedPlayer, updatedPlayer.position, updatedPlayer.direction, characterId)
+                is ClientMessage.MoveTo -> {
+                    val result = zoneInstance.movePlayerTo(characterId, message.targetPosition)
+                    when (result) {
+                        is net.kibotu.ro.zone.model.ZoneInstance.MoveResult.Success -> {
+                            val updatedPlayer = zoneInstance.getPlayer(characterId)
+                            if (updatedPlayer != null) {
+                                val movementMessage = ServerMessage.Movement(
+                                    characterId = updatedPlayer.characterId,
+                                    position = updatedPlayer.position,
+                                    direction = updatedPlayer.direction
+                                )
+                                session.sendMessage(movementMessage)
+                                broadcastMovement(zoneInstance, updatedPlayer, updatedPlayer.position, updatedPlayer.direction, characterId)
+                            }
                         }
-                    } else {
-                        session.sendMessage(ServerMessage.Error("Invalid movement: position out of bounds or invalid"))
+                        is net.kibotu.ro.zone.model.ZoneInstance.MoveResult.Error -> {
+                            session.sendMessage(ServerMessage.Error(result.message))
+                        }
+                    }
+                }
+                is ClientMessage.MoveDirection -> {
+                    val result = zoneInstance.movePlayerDirection(characterId, message.direction)
+                    when (result) {
+                        is net.kibotu.ro.zone.model.ZoneInstance.MoveResult.Success -> {
+                            val updatedPlayer = zoneInstance.getPlayer(characterId)
+                            if (updatedPlayer != null) {
+                                val movementMessage = ServerMessage.Movement(
+                                    characterId = updatedPlayer.characterId,
+                                    position = updatedPlayer.position,
+                                    direction = updatedPlayer.direction
+                                )
+                                session.sendMessage(movementMessage)
+                                broadcastMovement(zoneInstance, updatedPlayer, updatedPlayer.position, updatedPlayer.direction, characterId)
+                            }
+                        }
+                        is net.kibotu.ro.zone.model.ZoneInstance.MoveResult.Error -> {
+                            session.sendMessage(ServerMessage.Error(result.message))
+                        }
                     }
                 }
                 is ClientMessage.Chat -> {

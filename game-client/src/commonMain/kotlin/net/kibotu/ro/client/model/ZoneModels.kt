@@ -49,10 +49,15 @@ data class MonsterDTO(
 @kotlinx.serialization.Serializable
 sealed class ClientMessage {
     @kotlinx.serialization.Serializable
-    @kotlinx.serialization.SerialName("move")
-    data class Move(
-        val direction: String,
-        val position: Position
+    @kotlinx.serialization.SerialName("move_to")
+    data class MoveTo(
+        val targetPosition: Position  // Target position for click-to-move pathfinding
+    ) : ClientMessage()
+    
+    @kotlinx.serialization.Serializable
+    @kotlinx.serialization.SerialName("move_direction")
+    data class MoveDirection(
+        val direction: String  // "up", "down", "left", "right" for keyboard movement
     ) : ClientMessage()
     
     @kotlinx.serialization.Serializable
@@ -120,12 +125,21 @@ data class ServerMapData(
     val height: Int,
     val tileSize: Int = 32,
     val collisionMap: ServerCollisionMapData,
+    val heightMap: ServerHeightMapData? = null,
     val spawnPoints: List<Position>,
     val npcs: List<ServerNPCData>,
     val monsterSpawns: List<ServerMonsterSpawnData>? = null,
     val version: String = "1.0",
     val createdAt: String? = null,
     val updatedAt: String? = null
+)
+
+@Serializable
+data class ServerHeightMapData(
+    val width: Int,
+    val height: Int,
+    val data: String,  // Base64-encoded FloatArray
+    val maxHeight: Float = 2f
 )
 
 @Serializable

@@ -76,6 +76,10 @@ class AdminService(
             mapWidth = instance.mapData.width,
             mapHeight = instance.mapData.height,
             tileSize = instance.mapData.tileSize,
+            collisionMap = instance.mapData.collisionMap.data,
+            heightMap = instance.mapData.heightMap?.data,
+            maxHeight = instance.mapData.heightMap?.maxHeight ?: 2f,
+            spawnPoints = instance.mapData.spawnPoints.map { PositionInfo(it.x, it.y) },
             players = instance.getAllPlayers().map { player ->
                 MinimapPlayerInfo(
                     characterId = player.characterId,
@@ -171,6 +175,10 @@ data class MinimapData(
     val mapWidth: Int,
     val mapHeight: Int,
     val tileSize: Int,
+    val collisionMap: String,  // Base64-encoded collision bitmap
+    val heightMap: String? = null,  // Base64-encoded heightmap (optional)
+    val maxHeight: Float = 2f,
+    val spawnPoints: List<PositionInfo> = emptyList(),
     val players: List<MinimapPlayerInfo>,
     val npcs: List<MinimapNPCInfo>
 )

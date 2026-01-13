@@ -320,53 +320,22 @@ class GameViewModel {
             // TODO: Convert ServerCollisionMapData to CollisionMap for client-side validation
         }
         
-        ClientLogger.info("Moving player: $direction from (${currentPosition.x}, ${currentPosition.y}) to (${newPosition.x}, ${newPosition.y})", "Movement")
+        ClientLogger.info("Sending movement command to server: direction=$direction", "Movement")
         
-        // Optimistic update: update local state immediately for responsive UI
-        _state.update { state ->
-            // Update own position
-            val updatedState = state.copy(playerPosition = newPosition)
-            
-            // Also update in players map if we're tracking ourselves
-            val currentPlayer = state.players[selectedCharacter.id]
-            if (currentPlayer != null) {
-                val updatedPlayer = currentPlayer.copy(
-                    position = newPosition,
-                    direction = direction
-                )
-                ClientLogger.debug("Updating player in map: ${selectedCharacter.id} -> $updatedPlayer", "Movement")
-                updatedState.copy(
-                    players = state.players + (selectedCharacter.id to updatedPlayer)
-                )
-            } else {
-                ClientLogger.debug("Player not found in map, creating new entry", "Movement")
-                updatedState.copy(
-                    players = state.players + (selectedCharacter.id to PlayerDTO(
-                        characterId = selectedCharacter.id,
-                        name = selectedCharacter.name,
-                        position = newPosition,
-                        direction = direction
-                    ))
-                )
-            }
-        }
-        
-        // Send movement to server
+        // Send movement command to server (server will handle pathfinding and validation)
         scope.launch {
-            ClientLogger.info("Sending movement to server: direction=$direction, position=$newPosition", "Movement")
             try {
-                zoneWebSocketClient.sendMove(direction, newPosition)
-                ClientLogger.debug("Movement sent to server successfully", "Movement")
+                zoneWebSocketClient.sendMoveDirection(direction)
+                ClientLogger.debug("Movement command sent to server successfully", "Movement")
             } catch (e: Exception) {
-                ClientLogger.error("Failed to send movement to server: ${e.message}", "Movement")
+                ClientLogger.error("Failed to send movement command to server: ${e.message}", "Movement")
             }
         }
     }
     
     /**
      * Move player toward a target position (for click-to-move).
-     * This sets the target destination. Pathfinding will be handled by the client-side GameScreen.
-     * According to GAME_SPEC.md section 2.2, pathfinding uses A* algorithm.
+     * Sends move command to server - server handles pathfinding.
      */
     fun movePlayerToPosition(targetPosition: Position) {
         val currentPosition = _state.value.playerPosition
@@ -384,32 +353,19 @@ class GameViewModel {
         }
         
         ClientLogger.info(
-            "Setting movement target: ($targetPosition) from current position ($currentPosition)",
+            "Sending move-to command to server: target=($targetPosition) from current position ($currentPosition)",
             "Movement"
         )
         
-        // Store target position for pathfinding (client-side GameScreen will handle A* pathfinding)
-        // For now, use simple direct movement as fallback
-        // Full pathfinding integration should be done in GameScreen using Pathfinding class
-        
-        // Calculate direction toward target (simple: move in the direction with largest difference)
-        val deltaX = targetPosition.x - currentPosition.x
-        val deltaY = targetPosition.y - currentPosition.y
-        
-        val direction = when {
-            kotlin.math.abs(deltaY) > kotlin.math.abs(deltaX) -> {
-                // Move vertically first
-                if (deltaY < 0) "up" else "down"
-            }
-            else -> {
-                // Move horizontally
-                if (deltaX < 0) "left" else "right"
+        // Send move-to command to server (server will handle pathfinding)
+        scope.launch {
+            try {
+                zoneWebSocketClient.sendMoveTo(targetPosition)
+                ClientLogger.debug("Move-to command sent to server successfully", "Movement")
+            } catch (e: Exception) {
+                ClientLogger.error("Failed to send move-to command to server: ${e.message}", "Movement")
             }
         }
-        
-        // Move one step in the calculated direction
-        // Note: Full pathfinding should be implemented in GameScreen using Pathfinding.findPath()
-        movePlayer(direction)
     }
     
     fun sendChat(message: String) {

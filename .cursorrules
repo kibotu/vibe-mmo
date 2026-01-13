@@ -1,0 +1,16 @@
+# Cursor Agent Custom Instructions
+
+## Build and Error Handling
+- Always build the project after making code changes
+- Automatically fix compilation errors when detected
+- Run `./gradlew build` or appropriate build command to verify changes
+- Fix any linter errors or warnings that appear
+
+## Code Quality
+- Follow Kotlin coding conventions
+- Maintain consistency with existing codebase patterns
+- Write clean, maintainable code with proper error handling
+
+## Documentation
+- Keep code comments clear and helpful
+

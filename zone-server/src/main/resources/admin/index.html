@@ -546,6 +546,12 @@
             border: 2px solid #059669;
         }
         
+        .minimap-legend-dot.spawn {
+            background: #fbbf24;
+            border: 2px solid #f59e0b;
+            clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+        }
+        
         .minimap-stats {
             display: flex;
             gap: 12px;
@@ -893,6 +899,45 @@
         
         let minimapUpdateIntervals = {};
         
+        // Decode collision map from Base64
+        function decodeCollisionMap(base64, width, height) {
+            const str = atob(base64);
+            const bytes = new Uint8Array(str.length);
+            for (let i = 0; i < str.length; i++) {
+                bytes[i] = str.charCodeAt(i);
+            }
+            
+            const data = new Array(width * height);
+            for (let i = 0; i < data.length; i++) {
+                const byteIndex = Math.floor(i / 8);
+                const bitIndex = 7 - (i % 8);
+                // bit = 1 means walkable (true), bit = 0 means blocked (false)
+                data[i] = (bytes[byteIndex] & (1 << bitIndex)) !== 0;
+            }
+            return data;
+        }
+        
+        // Decode heightmap from Base64 FloatArray
+        function decodeHeightMap(base64, width, height) {
+            const str = atob(base64);
+            const buffer = new ArrayBuffer(str.length);
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < str.length; i++) {
+                bytes[i] = str.charCodeAt(i);
+            }
+            
+            const view = new DataView(buffer);
+            const heightMap = new Array(width * height);
+            for (let i = 0; i < heightMap.length; i++) {
+                if (i * 4 + 3 < buffer.byteLength) {
+                    heightMap[i] = view.getFloat32(i * 4, true); // little-endian
+                } else {
+                    heightMap[i] = 0;
+                }
+            }
+            return heightMap;
+        }
+        
         function drawMinimap(canvas, minimapData) {
             const ctx = canvas.getContext('2d');
             const container = canvas.parentElement;
@@ -910,13 +955,77 @@
             canvas.width = displayWidth;
             canvas.height = displayHeight;
             
-            // Clear canvas
-            ctx.fillStyle = '#2a2a2a';
-            ctx.fillRect(0, 0, displayWidth, displayHeight);
+            // Decode collision map
+            let collisionData = null;
+            try {
+                collisionData = decodeCollisionMap(minimapData.collisionMap, minimapData.mapWidth, minimapData.mapHeight);
+            } catch (e) {
+                console.error('Failed to decode collision map:', e);
+            }
+            
+            // Decode heightmap if available
+            let heightMap = null;
+            if (minimapData.heightMap) {
+                try {
+                    heightMap = decodeHeightMap(minimapData.heightMap, minimapData.mapWidth, minimapData.mapHeight);
+                } catch (e) {
+                    console.error('Failed to decode heightmap:', e);
+                }
+            }
+            
+            // Draw terrain heightmap if available
+            if (heightMap) {
+                const maxHeight = minimapData.maxHeight || 2;
+                for (let y = 0; y < minimapData.mapHeight; y++) {
+                    for (let x = 0; x < minimapData.mapWidth; x++) {
+                        const index = y * minimapData.mapWidth + x;
+                        const height = heightMap[index] || 0;
+                        const normalizedHeight = Math.min(height / maxHeight, 1);
+                        
+                        // Color gradient: dark green (low) -> light green -> brown -> gray (high)
+                        let r, g, b;
+                        if (normalizedHeight < 0.3) {
+                            r = 34 + normalizedHeight * 50;
+                            g = 139 + normalizedHeight * 50;
+                            b = 34;
+                        } else if (normalizedHeight < 0.6) {
+                            const t = (normalizedHeight - 0.3) / 0.3;
+                            r = 84 + t * 100;
+                            g = 189 + t * 20;
+                            b = 34 - t * 20;
+                        } else {
+                            const t = (normalizedHeight - 0.6) / 0.4;
+                            r = 184 + t * 50;
+                            g = 209 - t * 50;
+                            b = 14 + t * 100;
+                        }
+                        
+                        ctx.fillStyle = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
+                        ctx.fillRect(x * scale, y * scale, Math.ceil(scale), Math.ceil(scale));
+                    }
+                }
+            } else {
+                // Default background if no heightmap
+                ctx.fillStyle = '#2a2a2a';
+                ctx.fillRect(0, 0, displayWidth, displayHeight);
+            }
+            
+            // Draw collision map overlay (blocked tiles)
+            if (collisionData) {
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+                for (let y = 0; y < minimapData.mapHeight; y++) {
+                    for (let x = 0; x < minimapData.mapWidth; x++) {
+                        const index = y * minimapData.mapWidth + x;
+                        if (!collisionData[index]) { // blocked tile
+                            ctx.fillRect(x * scale, y * scale, Math.ceil(scale), Math.ceil(scale));
+                        }
+                    }
+                }
+            }
             
             // Draw grid (optional, lighter for large maps)
-            if (minimapData.mapWidth <= 200 && minimapData.mapHeight <= 200) {
-                ctx.strokeStyle = '#333';
+            if (minimapData.mapWidth <= 200 && minimapData.mapHeight <= 200 && scale > 0.5) {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
                 ctx.lineWidth = 0.5;
                 for (let x = 0; x <= minimapData.mapWidth; x++) {
                     ctx.beginPath();
@@ -930,6 +1039,38 @@
                     ctx.lineTo(displayWidth, y * scale);
                     ctx.stroke();
                 }
+            }
+            
+            // Draw spawn points (yellow stars)
+            if (minimapData.spawnPoints && minimapData.spawnPoints.length > 0) {
+                ctx.fillStyle = '#fbbf24';
+                ctx.strokeStyle = '#f59e0b';
+                ctx.lineWidth = 1;
+                minimapData.spawnPoints.forEach((spawn, index) => {
+                    const x = spawn.x * scale;
+                    const y = spawn.y * scale;
+                    const size = Math.max(3, scale * 0.8);
+                    
+                    // Draw star shape
+                    ctx.beginPath();
+                    const spikes = 5;
+                    const outerRadius = size;
+                    const innerRadius = size * 0.5;
+                    for (let i = 0; i < spikes * 2; i++) {
+                        const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                        const angle = (i * Math.PI) / spikes - Math.PI / 2;
+                        const px = x + radius * Math.cos(angle);
+                        const py = y + radius * Math.sin(angle);
+                        if (i === 0) {
+                            ctx.moveTo(px, py);
+                        } else {
+                            ctx.lineTo(px, py);
+                        }
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                });
             }
             
             // Draw NPCs (green dots)
@@ -1015,6 +1156,14 @@
                                     <div class="minimap-legend-item">
                                         <span class="minimap-legend-dot npc"></span>
                                         <span>NPCs</span>
+                                    </div>
+                                    <div class="minimap-legend-item">
+                                        <span class="minimap-legend-dot spawn"></span>
+                                        <span>Spawn Points</span>
+                                    </div>
+                                    <div class="minimap-legend-item">
+                                        <span style="display: inline-block; width: 12px; height: 12px; background: rgba(255, 0, 0, 0.2); border: 1px solid rgba(255, 0, 0, 0.5);"></span>
+                                        <span>Blocked</span>
                                     </div>
                                 </div>
                             </div>

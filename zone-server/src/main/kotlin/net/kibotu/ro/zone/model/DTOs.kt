@@ -60,10 +60,15 @@ data class MonsterDTO(
 @kotlinx.serialization.Serializable
 sealed class ClientMessage {
     @kotlinx.serialization.Serializable
-    @kotlinx.serialization.SerialName("move")
-    data class Move(
-        val direction: String,
-        val position: Position
+    @kotlinx.serialization.SerialName("move_to")
+    data class MoveTo(
+        val targetPosition: Position  // Target position for click-to-move pathfinding
+    ) : ClientMessage()
+    
+    @kotlinx.serialization.Serializable
+    @kotlinx.serialization.SerialName("move_direction")
+    data class MoveDirection(
+        val direction: String  // "up", "down", "left", "right" for keyboard movement
     ) : ClientMessage()
     
     @kotlinx.serialization.Serializable

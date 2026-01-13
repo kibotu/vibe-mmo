@@ -20,7 +20,8 @@ class ZoneWebSocketClient {
         classDiscriminator = "type"
         serializersModule = SerializersModule {
             polymorphic(ClientMessage::class) {
-                subclass(ClientMessage.Move::class, serializer())
+                subclass(ClientMessage.MoveTo::class, serializer())
+                subclass(ClientMessage.MoveDirection::class, serializer())
                 subclass(ClientMessage.Chat::class, serializer())
             }
             polymorphic(ServerMessage::class) {
@@ -179,12 +180,30 @@ class ZoneWebSocketClient {
         }
     }
     
-    suspend fun sendMove(direction: String, position: Position) {
+    suspend fun sendMoveTo(targetPosition: Position) {
         val currentSession = session ?: return
         
         try {
             movementSendTime = System.currentTimeMillis()
-            val message = ClientMessage.Move(direction, position)
+            val message = ClientMessage.MoveTo(targetPosition)
+            val jsonString = json.encodeToString(ClientMessage.serializer(), message)
+            currentSession.send(Frame.Text(jsonString))
+        } catch (e: CancellationException) {
+            session = null
+        } catch (e: Exception) {
+            if (e.message?.contains("cancelled", ignoreCase = true) == true ||
+                e.message?.contains("closed", ignoreCase = true) == true) {
+                session = null
+            }
+        }
+    }
+    
+    suspend fun sendMoveDirection(direction: String) {
+        val currentSession = session ?: return
+        
+        try {
+            movementSendTime = System.currentTimeMillis()
+            val message = ClientMessage.MoveDirection(direction)
             val jsonString = json.encodeToString(ClientMessage.serializer(), message)
             currentSession.send(Frame.Text(jsonString))
         } catch (e: CancellationException) {

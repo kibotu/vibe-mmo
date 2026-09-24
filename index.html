@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#14261c" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Payon Forest — Classic RO Study</title>
+  </head>
+  <body>
+    <main id="app">
+      <section id="game-shell" aria-label="Payon Forest game">
+        <canvas id="game-canvas" width="800" height="600"></canvas>
+        <div id="world-overlay" aria-hidden="true"></div>
+
+        <div id="hud">
+          <header class="brand-panel">
+            <span class="brand-title">PAYON FOREST</span>
+            <span class="brand-subtitle">classic single-player study</span>
+          </header>
+
+          <section id="player-panel" class="status-panel">
+            <div class="status-heading">
+              <span>NOVICE</span>
+              <span id="player-hp-label">40 / 40</span>
+            </div>
+            <div class="bar hp-bar"><span id="player-hp-fill"></span></div>
+          </section>
+
+          <section id="target-panel" class="status-panel is-hidden">
+            <div class="status-heading">
+              <span id="target-name">PORING</span>
+              <span id="target-hp-label">50 / 50</span>
+            </div>
+            <div class="bar target-bar"><span id="target-hp-fill"></span></div>
+          </section>
+
+          <div id="map-label">PAYON FOREST · LV 1</div>
+
+          <section id="hotbar" aria-label="Shortcut bar">
+            <button class="hotbar-slot active" id="attack-slot" type="button">
+              <span class="slot-key">F1</span>
+              <span class="slot-icon attack-icon">×</span>
+              <span class="slot-label">Attack</span>
+            </button>
+            <button class="hotbar-slot" id="heal-slot" type="button">
+              <span class="slot-key">H</span>
+              <span class="slot-icon heal-icon">+</span>
+              <span class="slot-label">Apple</span>
+            </button>
+            <button class="hotbar-slot" id="inventory-toggle" type="button">
+              <span class="slot-key">I</span>
+              <span class="slot-icon bag-icon">▦</span>
+              <span class="slot-label">Inventory</span>
+            </button>
+          </section>
+
+          <div id="message-log" aria-live="polite"></div>
+          <div id="seed-label">seed 1337 · F1 attack · H apple · I inventory</div>
+        </div>
+
+        <section id="inventory-window" class="window is-hidden" aria-label="Inventory">
+          <header class="window-titlebar">
+            <span>INVENTORY</span>
+            <button id="inventory-close" type="button" aria-label="Close inventory">×</button>
+          </header>
+          <div class="inventory-caption">Materials and consumables</div>
+          <div id="inventory-grid"></div>
+          <div class="inventory-footer">Click a floor item to pick it up.</div>
+        </section>
+
+        <aside id="help-card">
+          <strong>Left click</strong> move / attack &nbsp;·&nbsp;
+          <strong>Right drag</strong> rotate &nbsp;·&nbsp;
+          <strong>Shift + right drag</strong> tilt &nbsp;·&nbsp;
+          <strong>Control + right drag</strong> zoom &nbsp;·&nbsp;
+          <strong>Wheel</strong> zoom &nbsp;·&nbsp;
+          <strong>H</strong> eat Apple
+          <button id="help-dismiss" type="button">Got it</button>
+        </aside>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -46,3 +46,7 @@ npm run smoke
 Set `CHROME_PATH` if Chrome is installed elsewhere.
 
 The implementation uses procedural placeholder sprites and geometry. It does not ship extracted Ragnarok Online assets.
+
+## GitHub Pages
+
+Pushing to `main` runs the test suite and publishes the Vite `dist/` build to GitHub Pages. Set **Settings → Pages → Build and deployment → Source** to **GitHub Actions** once for the repository. The site is then available at [kibotu.github.io/vibe-mmo](https://kibotu.github.io/vibe-mmo/).

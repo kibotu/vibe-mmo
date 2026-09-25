@@ -1,6 +1,6 @@
 # Technical Implementation Spec: Classic Ragnarok-Style Three.js Game
 
-**Status:** Implemented — tracer bullet with consumable extension
+**Status:** Implemented — offline tracer bullet plus authoritative PHP multiplayer backend
 **Target profile:** `classic2003`
 **Primary platform:** Desktop browser
 **Renderer:** Three.js with WebGL
@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-Build a small single-player game that reproduces the visual language and control feel of classic Ragnarok Online:
+Build a small RPG slice that reproduces the visual language and control feel of classic Ragnarok Online, with an offline mode and an optional shared multiplayer world:
 
 - A 3D outdoor world with a 2.5D presentation.
 - A perspective orbital camera focused on the player.
@@ -20,7 +20,7 @@ Build a small single-player game that reproduces the visual language and control
 - Random floor loot and a small inventory.
 - No sound effects, music, or audio API usage.
 
-This is a vertical slice, not an MMO emulator. The first deliverable is deliberately narrow: one map, one player, one monster type, one loot path, and one inventory.
+This remains a vertical slice, not an MMO emulator. It is deliberately narrow: one map, one monster type, one loot path, one inventory, and small shared rooms.
 
 ## 2. Assumptions and decisions
 
@@ -29,7 +29,7 @@ This is a vertical slice, not an MMO emulator. The first deliverable is delibera
 3. **World scale:** One walkable map cell equals one normalized Three.js world unit. The original renderer used a different raw scale; conversion is documented in the camera section.
 4. **Viewport:** The reference presentation is 4:3. The first implementation should render a logical `800x600` viewport and scale it to the browser window rather than changing the composition independently at every aspect ratio.
 5. **Movement:** Classic mouse movement is the default. Keyboard movement is not part of the canonical control scheme. An optional camera-relative keyboard mode may be added later without changing the default.
-6. **Persistence:** Inventory and world state are session-only in the tracer bullet. Save/load is deferred.
+6. **Persistence:** Offline world state remains session-only. Multiplayer stores guest identity, room assignment, HP, inventory, and periodic position in MariaDB; active rooms and monsters live in the PHP daemon's RAM.
 7. **Combat scope:** Porings are passive and do not attack the player in the first slice. The combat model must nevertheless support damage, death, and future hostile actors.
 8. **No audio:** Do not create an audio manifest, import `Audio`, instantiate `AudioContext`, or add sound-related event fields. Feedback is visual only.
 
@@ -165,6 +165,9 @@ Use a small, boring stack:
 - **Vite** for development and production bundling.
 - **Three.js** for WebGL rendering.
 - Vanilla DOM/CSS for the HUD and inventory. A frontend framework is unnecessary for this slice.
+- **PHP 8.5** with Amp's WebSocket server for the authoritative multiplayer runtime.
+- **MariaDB 10.11** for durable identity and player state, never the 20 Hz game loop.
+- **nginx, PHP-FPM, and Supervisor/systemd** for HTTP pages and the long-running daemon.
 - **Vitest** for pure simulation tests.
 - **Playwright** for one browser-level interaction test and screenshot capture.
 
@@ -232,6 +235,14 @@ public/
 ```
 
 This is a starting layout, not a mandate to create every file before the tracer bullet works. Keep files cohesive and delete unused scaffolding rather than building an abstract engine around one map.
+
+### 5.1 Multiplayer authority
+
+The static build keeps its local simulation. When entered from `lobby.php`, the browser runs in network mode and sends sequenced intents over WebSocket. A single PHP daemon owns each room's active world and advances it on a fixed 20 Hz tick. It sends authoritative snapshots at 10 Hz.
+
+The browser predicts its own cell movement and reconciles unacknowledged intents from `lastProcessedInput`. Remote actors are rendered from a delayed snapshot buffer to absorb network jitter. MySQL stores durable state on a slower persistence interval and is not queried during movement or combat.
+
+A disconnected socket does not delete its player. Empty rooms pause and retain state for a bounded period so the same guest can reconnect. A daemon restart closes all sockets, restores durable player state, and rebuilds active room objects. See `docs/MULTIPLAYER.md` for the protocol.
 
 ## 6. Simulation and rendering architecture
 
@@ -903,6 +914,20 @@ Test pure functions and systems without Three.js:
 - Death exactly once.
 - Weighted loot selection with a seeded RNG.
 - Inventory stacking and capacity.
+- PHP deterministic world generation matches the browser seed.
+- PHP intent bounds, sequence acknowledgement, inventory, and persistence mapping.
+
+### Multiplayer integration tests
+
+Run the Docker stack and use two isolated browser contexts:
+
+1. Join the lobby as two guests.
+2. Assert both WebSockets receive snapshots from the same room tick.
+3. Move one player and assert the other can render the reconciled actor.
+4. Disconnect and reconnect one socket and assert the public player ID is unchanged.
+5. Assert a client cannot set position, HP, inventory, or loot through a JSON message.
+6. Stop/restart the daemon and assert clients reconnect with durable identity/state.
+7. Exercise `admin.php` lifecycle and disconnect controls against the live process.
 
 ### Browser tests
 
@@ -967,7 +992,7 @@ Three.js `SpriteMaterial` supports `sizeAttenuation`; leave it enabled for the c
 
 The requested slice is done when a new user can:
 
-- Start the game without setup instructions beyond launching the dev server.
+- Start the offline game from Vite, or start the documented Docker stack and enter through the lobby.
 - See a Payon-inspired 3D forest from the classic camera.
 - Move with left-click and use the classic camera controls.
 - See 2D directional player and Poring sprites moving over the 3D ground.

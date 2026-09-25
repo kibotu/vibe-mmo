@@ -4,6 +4,16 @@ import { calculateDamage, ATTACK_IMPACT_DELAY, ATTACK_INTERVAL, ATTACK_RANGE, PL
 import { spriteDirection } from './direction';
 import { InputController } from './input';
 import { Inventory, ITEM_DEFINITIONS } from './inventory';
+import { SnapshotBuffer, advancePredictedMove, calculateSnapshotRenderTime, interpolateAngle } from './interpolation';
+import {
+  MultiplayerClient,
+  type ConnectionStatus,
+  type IntentMessage,
+  type NetworkActor,
+  type NetworkEventMessage,
+  type NetworkSnapshot,
+  type NetworkWelcome,
+} from './multiplayer';
 import { rollLoot } from './loot';
 import { findPath, cellDistance } from './pathfinding';
 import { Random } from './random';
@@ -30,7 +40,18 @@ interface DamageEffect {
   startedAt: number;
 }
 
+interface PredictedMove {
+  sequence: number;
+  x: number;
+  z: number;
+  issuedAt: number;
+}
+
 interface UiRefs {
+  brandSubtitle: HTMLElement;
+  connectionPanel: HTMLElement;
+  connectionStatus: HTMLElement;
+  connectionMessage: HTMLElement;
   playerHpLabel: HTMLElement;
   playerHpFill: HTMLElement;
   targetPanel: HTMLElement;
@@ -48,6 +69,14 @@ interface UiRefs {
   overlay: HTMLElement;
   helpCard: HTMLElement;
   helpDismiss: HTMLButtonElement;
+}
+
+export interface GameOptions {
+  multiplayer?: boolean;
+  playerId?: string;
+  playerName?: string;
+  roomName?: string;
+  interpolationMs?: number;
 }
 
 const required = <T extends HTMLElement>(id: string): T => {
@@ -82,16 +111,48 @@ export class Game {
   private readonly player: Actor;
   private readonly inventorySlots: HTMLElement[] = [];
   private readonly inventorySlotContents: Array<{ icon: HTMLElement; quantity: HTMLElement }> = [];
+  private readonly networkMode: boolean;
+  private readonly configuredPlayerId?: string;
+  private readonly configuredPlayerName?: string;
+  private readonly configuredRoomName?: string;
+  private readonly configuredInterpolationMs: number;
+  private readonly networkSnapshots = new SnapshotBuffer(48);
+  private readonly predictedMoves = new Map<number, PredictedMove>();
+  private readonly seenEventIds = new Set<string>();
+
+  private multiplayer: MultiplayerClient | null = null;
+  private networkPlayerId?: string;
+  private networkServerTime = 0;
+  private networkClockReceivedAt = 0;
+  private networkInterpolationMs = 100;
+  private networkAuthoritativePosition: Vec3 | null = null;
+  private networkPredictedPosition: Vec3 | null = null;
+  private networkGoal: { x: number; z: number } | null = null;
+  private networkGoalIssuedAt = 0;
+  private lastConnectionState: ConnectionStatus['state'] | null = null;
 
   private time = 0;
   private lastFrame = performance.now();
   private nextFloorItemId = 1;
   private lastMessageSignature = '';
   private lastInventorySignature = '';
+  private lastHudSignature = '';
   private hoveredCell: GridCell | null = null;
 
-  public constructor(canvas: HTMLCanvasElement, seed = 1337, profile = CLASSIC_2003_PROFILE) {
+  public constructor(
+    canvas: HTMLCanvasElement,
+    seed = 1337,
+    profile = CLASSIC_2003_PROFILE,
+    options: GameOptions = {},
+  ) {
     this.canvas = canvas;
+    this.networkMode = options.multiplayer === true;
+    this.configuredPlayerId = options.playerId;
+    this.configuredPlayerName = options.playerName;
+    this.configuredRoomName = options.roomName;
+    this.configuredInterpolationMs = Math.max(0, options.interpolationMs ?? 100);
+    this.networkPlayerId = options.playerId;
+    this.networkInterpolationMs = this.configuredInterpolationMs;
     this.camera = new ROCamera(VIEWPORT_WIDTH / VIEWPORT_HEIGHT, profile);
     this.random = new Random(seed);
     this.renderer = new THREE.WebGLRenderer({
@@ -123,15 +184,22 @@ export class Game {
     this.world.buildProps(this.random, reserved);
 
     const playerCell: GridCell = { x: 32, z: 32 };
-    this.player = this.createActor('player', 'player-0', playerCell, 40, PLAYER_ATTACK, 0);
+    this.player = this.createActor('player', this.configuredPlayerId ?? 'player-0', playerCell, 40, PLAYER_ATTACK, 0);
+    this.player.name = this.configuredPlayerName;
     this.actors.set(this.player.id, this.player);
-    spawnCells.forEach((cell, index) => {
-      const poring = this.createActor('poring', `poring-${index}`, cell, 50, 6, 0);
-      poring.nextThinkAt = this.time + this.random.range(0.5, 3.5);
-      this.actors.set(poring.id, poring);
-    });
+    if (!this.networkMode) {
+      spawnCells.forEach((cell, index) => {
+        const poring = this.createActor('poring', `poring-${index}`, cell, 50, 6, 0);
+        poring.nextThinkAt = this.time + this.random.range(0.5, 3.5);
+        this.actors.set(poring.id, poring);
+      });
+    }
 
     this.ui = {
+      brandSubtitle: required('brand-subtitle'),
+      connectionPanel: required('connection-panel'),
+      connectionStatus: required('connection-status'),
+      connectionMessage: required('connection-message'),
       playerHpLabel: required('player-hp-label'),
       playerHpFill: required('player-hp-fill'),
       targetPanel: required('target-panel'),
@@ -152,7 +220,13 @@ export class Game {
     };
     this.buildInventorySlots();
     this.bindUi();
-    this.ui.seedLabel.textContent = `seed ${seed} · F1 attack · H apple · I inventory`;
+    this.ui.brandSubtitle.textContent = this.networkMode
+      ? `${this.configuredRoomName ?? 'multiplayer room'} · authoritative multiplayer`
+      : 'classic single-player study';
+    this.ui.seedLabel.textContent = this.networkMode
+      ? `seed ${seed} · server authoritative · F1 attack · H apple · I inventory`
+      : `seed ${seed} · F1 attack · H apple · I inventory`;
+    this.setConnectionStatus(this.networkMode ? 'connecting' : 'idle', this.networkMode ? 'Connecting to the room…' : 'Offline single-player');
     this.input = new InputController(canvas, {
       onPrimary: (x, y) => this.handlePrimary(x, y),
       onHover: (x, y) => this.handleHover(x, y),
@@ -165,11 +239,423 @@ export class Game {
       onEscape: () => this.closeInventory(),
     });
 
-    this.addMessage('Welcome to Payon Forest. Left-click a Poring to begin.');
-    this.addMessage('The forest is quiet. No audio, as requested.');
+    if (this.networkMode) {
+      this.addMessage(`Connecting to ${this.configuredRoomName ?? 'the room'}…`);
+    } else {
+      this.addMessage('Welcome to Payon Forest. Left-click a Poring to begin.');
+      this.addMessage('The forest is quiet. No audio, as requested.');
+    }
     this.updateInventoryUi(true);
     this.updateHud();
     (window as Window & { __RO_READY__?: boolean }).__RO_READY__ = true;
+  }
+
+  public get isMultiplayer(): boolean {
+    return this.networkMode;
+  }
+
+  public attachMultiplayer(client: MultiplayerClient): void {
+    if (!this.networkMode) {
+      client.disconnect();
+      return;
+    }
+    if (this.multiplayer && this.multiplayer !== client) this.multiplayer.disconnect();
+    this.multiplayer = client;
+    client.setHandlers({
+      onStatus: (status) => this.handleConnectionStatus(status),
+      onWelcome: (message) => this.handleWelcome(message),
+      onSnapshot: (message) => this.handleNetworkSnapshot(message),
+      onEvent: (message) => this.handleNetworkEvent(message),
+      onError: (message) => this.addMessage(`Server: ${message.message}`),
+    });
+    client.start();
+  }
+
+  public disconnectMultiplayer(): void {
+    this.multiplayer?.disconnect();
+  }
+
+  private setConnectionStatus(state: ConnectionStatus['state'], message: string): void {
+    this.ui.connectionPanel.classList.toggle('is-hidden', !this.networkMode);
+    this.ui.connectionPanel.classList.toggle('is-connecting', state === 'connecting' || state === 'idle');
+    this.ui.connectionPanel.classList.toggle('is-reconnecting', state === 'reconnecting');
+    this.ui.connectionPanel.classList.toggle('is-error', state === 'error' || state === 'disconnected');
+    const labels: Record<ConnectionStatus['state'], string> = {
+      idle: 'OFFLINE',
+      connecting: 'CONNECTING',
+      connected: 'CONNECTED',
+      reconnecting: 'RECONNECTING',
+      disconnected: 'DISCONNECTED',
+      error: 'ERROR',
+    };
+    this.ui.connectionStatus.textContent = labels[state];
+    this.ui.connectionMessage.textContent = message;
+  }
+
+  private handleConnectionStatus(status: ConnectionStatus): void {
+    this.setConnectionStatus(status.state, status.message);
+    if (status.state === this.lastConnectionState) return;
+    this.lastConnectionState = status.state;
+    if (status.state === 'connected') {
+      this.addMessage(status.message);
+    } else if (status.state === 'reconnecting') {
+      this.addMessage('Connection lost. Reconnecting automatically…');
+    } else if (status.state === 'disconnected') {
+      this.addMessage('Disconnected from the room.');
+    } else if (status.state === 'error') {
+      this.addMessage(status.message);
+    }
+  }
+
+  private handleWelcome(message: NetworkWelcome): void {
+    this.networkInterpolationMs = Math.max(0, message.interpolationMs);
+    this.networkSnapshots.clear();
+    this.networkServerTime = message.serverTime;
+    this.networkClockReceivedAt = performance.now();
+    this.ensureNetworkPlayerId(message.playerId);
+    this.ui.brandSubtitle.textContent = `${message.room.name} · authoritative multiplayer`;
+    if (this.networkAuthoritativePosition === null) {
+      this.networkAuthoritativePosition = { ...this.player.position };
+      this.networkPredictedPosition = { ...this.player.position };
+    }
+  }
+
+  private handleNetworkSnapshot(message: NetworkSnapshot): void {
+    this.networkSnapshots.add(message);
+    this.networkServerTime = Math.max(this.networkServerTime, message.serverTime);
+    this.networkClockReceivedAt = performance.now();
+
+    this.syncNetworkActors(message.actors);
+    this.syncNetworkFloorItems(message.items);
+    this.inventory.replace(message.inventory);
+    this.updateInventoryUi();
+
+    const own = message.actors.find((actor) => actor.id === this.networkPlayerId);
+    if (own) {
+      this.networkAuthoritativePosition = { ...own.position };
+      this.player.hp = own.hp;
+      this.player.maxHp = own.maxHp;
+      this.player.state = own.state;
+      this.player.targetId = own.targetId ?? undefined;
+      this.player.nextAttackAt = own.nextAttackAt;
+      this.player.facing = own.facing;
+      if (this.networkGoal && own.state === 'dead') {
+        this.networkGoal = null;
+      }
+      if (this.networkGoal
+        && own.state === 'idle'
+        && Math.hypot(own.position.x - this.networkGoal.x, own.position.z - this.networkGoal.z) <= 0.35
+      ) {
+        this.networkGoal = null;
+      }
+      if (this.networkGoal
+        && own.state === 'idle'
+        && performance.now() - this.networkGoalIssuedAt > 750
+        && Math.hypot(own.position.x - this.networkGoal.x, own.position.z - this.networkGoal.z) > 0.35
+      ) {
+        this.networkGoal = null;
+      }
+      if (this.networkPredictedPosition === null) this.networkPredictedPosition = { ...own.position };
+    }
+    this.rebuildPredictedPosition();
+  }
+
+  private handleNetworkEvent(message: NetworkEventMessage): void {
+    const event = message.event;
+    const eventKey = `${typeof event.id}:${event.id}`;
+    if (this.seenEventIds.has(eventKey)) return;
+    this.seenEventIds.add(eventKey);
+    if (this.seenEventIds.size > 256) {
+      const oldest = this.seenEventIds.values().next().value as string | undefined;
+      if (oldest !== undefined) this.seenEventIds.delete(oldest);
+    }
+    const actor = event.actorId ? this.actors.get(event.actorId) : undefined;
+    if ((event.kind === 'damage' || event.kind === 'heal') && actor && event.amount !== null && event.amount !== undefined) {
+      this.showFloatingNumber(actor, `${event.kind === 'heal' ? '+' : ''}${event.amount}`, event.kind === 'heal' ? 'heal-number' : 'damage-number');
+    }
+    if (event.text) {
+      this.addMessage(event.text);
+    } else if (event.kind === 'damage' && actor && event.amount !== null && event.amount !== undefined) {
+      this.addMessage(`${actor.name ?? actor.id} took ${event.amount} damage.`);
+    } else if (event.kind === 'heal' && event.amount !== null && event.amount !== undefined) {
+      this.addMessage(`Recovered ${event.amount} HP.`);
+    } else if (event.kind === 'loot' && event.itemId) {
+      this.addMessage(`${ITEM_DEFINITIONS[event.itemId]?.name ?? event.itemId} was dropped.`);
+    } else if (event.kind === 'death') {
+      this.addMessage(actor ? `${actor.name ?? actor.id} was defeated.` : 'A combat event occurred.');
+    } else if (event.kind === 'respawn') {
+      this.addMessage(actor ? `${actor.name ?? actor.id} respawned.` : 'A combatant respawned.');
+    }
+  }
+
+  private ensureNetworkPlayerId(playerId: string): void {
+    if (this.networkPlayerId === playerId) return;
+    const previousId = this.player.id;
+    const existing = this.actors.get(playerId);
+    if (existing && existing !== this.player) this.removeNetworkActor(existing);
+    this.actors.delete(previousId);
+    this.player.id = playerId;
+    this.player.visual.sprite.userData = { kind: 'actor', id: playerId };
+    this.actors.set(playerId, this.player);
+    this.networkPlayerId = playerId;
+  }
+
+  private syncNetworkActors(actors: NetworkActor[]): void {
+    const seen = new Set<string>();
+    for (const state of actors) {
+      if (state.id === this.networkPlayerId) {
+        seen.add(state.id);
+        this.ensureNetworkPlayerId(state.id);
+        const player = this.player;
+        if (state.state === 'dead' && player.state !== 'dead') player.deathAt = this.time;
+        if (state.state !== 'dead') player.deathAt = undefined;
+        player.kind = state.kind;
+        player.name = state.name;
+        player.position = { ...state.position };
+        player.facing = state.facing;
+        player.state = state.state;
+        player.hp = state.hp;
+        player.maxHp = state.maxHp;
+        player.targetId = state.targetId ?? undefined;
+        player.nextAttackAt = state.nextAttackAt;
+        continue;
+      }
+
+      seen.add(state.id);
+      let actor = this.actors.get(state.id);
+      if (actor && actor.kind !== state.kind) {
+        this.removeNetworkActor(actor);
+        actor = undefined;
+      }
+      if (!actor) actor = this.createNetworkActor(state);
+      if (state.state === 'dead' && actor.state !== 'dead') actor.deathAt = this.time;
+      if (state.state !== 'dead') actor.deathAt = undefined;
+      actor.name = state.name;
+      actor.position = { ...state.position };
+      actor.facing = state.facing;
+      actor.state = state.state;
+      actor.hp = state.hp;
+      actor.maxHp = state.maxHp;
+      actor.targetId = state.targetId ?? undefined;
+      actor.nextAttackAt = state.nextAttackAt;
+    }
+
+    for (const [id, actor] of this.actors) {
+      if (id !== this.networkPlayerId && !seen.has(id)) this.removeNetworkActor(actor);
+    }
+  }
+
+  private createNetworkActor(state: NetworkActor): Actor {
+    const cell = this.world.grid.cellAt(state.position.x, state.position.z);
+    const actor = this.createActor(state.kind, state.id, cell, state.maxHp, 0, 0);
+    actor.name = state.name;
+    actor.position = { ...state.position };
+    actor.facing = state.facing;
+    actor.state = state.state;
+    if (state.state === 'dead') actor.deathAt = this.time;
+    actor.hp = state.hp;
+    actor.targetId = state.targetId ?? undefined;
+    actor.nextAttackAt = state.nextAttackAt;
+    this.actors.set(actor.id, actor);
+    return actor;
+  }
+
+  private removeNetworkActor(actor: Actor): void {
+    if (actor === this.player) return;
+    this.actors.delete(actor.id);
+    actor.visual.dispose();
+  }
+
+  private syncNetworkFloorItems(items: NetworkSnapshot['items']): void {
+    const existing = new Map(this.floorItems.map((item) => [item.id, item]));
+    const seen = new Set<string>();
+    for (const state of items) {
+      seen.add(state.id);
+      let item = existing.get(state.id);
+      if (item && item.itemId !== state.itemId) {
+        this.removeFloorItem(item);
+        item = undefined;
+      }
+      if (!item) item = this.createNetworkFloorItem(state);
+      item.itemId = state.itemId;
+      item.quantity = state.quantity;
+      item.position = { ...state.position };
+      item.bobOffset = state.bobOffset;
+      item.object.position.set(state.position.x, state.position.y + 0.2, state.position.z);
+      item.object.userData = { kind: 'floor-item', id: state.id };
+    }
+    for (const item of [...this.floorItems]) {
+      if (!seen.has(item.id)) this.removeFloorItem(item);
+    }
+  }
+
+  private createNetworkFloorItem(state: NetworkSnapshot['items'][number]): FloorItem {
+    const definition = ITEM_DEFINITIONS[state.itemId];
+    const material = new THREE.SpriteMaterial({
+      map: this.spriteTextures.getItem(state.itemId, definition?.color ?? '#b9a36e', definition?.glyph ?? '?'),
+      transparent: true,
+      alphaTest: 0.5,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+    const object = new THREE.Sprite(material);
+    object.center.set(0.5, 0);
+    object.scale.set(0.72, 0.72, 1);
+    object.position.set(state.position.x, state.position.y + 0.2, state.position.z);
+    object.renderOrder = 12;
+    object.userData = { kind: 'floor-item', id: state.id };
+    this.scene.add(object);
+    const item: FloorItem = {
+      id: state.id,
+      itemId: state.itemId,
+      quantity: state.quantity,
+      position: { ...state.position },
+      object,
+      bobOffset: state.bobOffset,
+    };
+    this.floorItems.push(item);
+    return item;
+  }
+
+  private removeFloorItem(item: FloorItem): void {
+    const index = this.floorItems.indexOf(item);
+    if (index >= 0) this.floorItems.splice(index, 1);
+    this.scene.remove(item.object);
+    item.object.material.dispose();
+  }
+
+  private syncPredictedMoves(): void {
+    const pending = this.multiplayer?.pendingInputs ?? [];
+    const moves = pending.filter((message): message is Extract<IntentMessage, { intent: 'move' }> => message.intent === 'move');
+    const seen = new Set(moves.map((move) => move.seq));
+    for (const sequence of this.predictedMoves.keys()) {
+      if (!seen.has(sequence)) this.predictedMoves.delete(sequence);
+    }
+    const now = performance.now();
+    for (const move of moves) {
+      if (!this.predictedMoves.has(move.seq)) {
+        this.predictedMoves.set(move.seq, {
+          sequence: move.seq,
+          // The wire format carries a cell coordinate.  Render movement
+          // toward its center, just as the offline path does.
+          x: Number.isInteger(move.payload.x) ? move.payload.x + 0.5 : move.payload.x,
+          z: Number.isInteger(move.payload.z) ? move.payload.z + 0.5 : move.payload.z,
+          issuedAt: now,
+        });
+      }
+    }
+  }
+
+  private rebuildPredictedPosition(): void {
+    this.syncPredictedMoves();
+    if (!this.networkAuthoritativePosition) return;
+
+    const moves = [...this.predictedMoves.values()].sort((a, b) => a.sequence - b.sequence);
+    if (moves.length > 0) {
+      let position: Vec3 = { ...this.networkAuthoritativePosition };
+      const now = performance.now();
+      for (const move of moves) {
+        position = advancePredictedMove(position, move, PLAYER_SPEED, Math.max(0, (now - move.issuedAt) / 1000));
+        position.y = this.world.grid.heightAt(position.x, position.z);
+      }
+      this.networkPredictedPosition = position;
+    } else if (this.networkPredictedPosition) {
+      const error = Math.hypot(
+        this.networkPredictedPosition.x - this.networkAuthoritativePosition.x,
+        this.networkPredictedPosition.z - this.networkAuthoritativePosition.z,
+      );
+      if (!Number.isFinite(error) || (error > 1.5 && (!this.networkGoal || this.player.state !== 'walk'))) {
+        this.networkPredictedPosition = { ...this.networkAuthoritativePosition };
+      } else {
+        // While a server path is still running, keep the local prediction on
+        // its goal instead of pulling it backwards toward each 10 Hz sample.
+        // Once the path is idle, converge small corrections smoothly.
+        const correction = !this.networkGoal || this.player.state !== 'walk'
+          ? 0.5
+          : error > 1 ? 0.15 : 0;
+        this.networkPredictedPosition = {
+          x: this.networkPredictedPosition.x + (this.networkAuthoritativePosition.x - this.networkPredictedPosition.x) * correction,
+          y: this.networkPredictedPosition.y,
+          z: this.networkPredictedPosition.z + (this.networkAuthoritativePosition.z - this.networkPredictedPosition.z) * correction,
+        };
+      }
+    } else {
+      this.networkPredictedPosition = { ...this.networkAuthoritativePosition };
+    }
+    this.player.position = { ...this.networkPredictedPosition };
+  }
+
+  private updateNetworkPrediction(deltaSeconds: number): void {
+    if (!this.networkAuthoritativePosition) return;
+    this.syncPredictedMoves();
+    if (!this.networkPredictedPosition) {
+      this.rebuildPredictedPosition();
+      return;
+    }
+
+    const moves = [...this.predictedMoves.values()].sort((a, b) => a.sequence - b.sequence);
+    const latest = moves[moves.length - 1];
+    if (latest) {
+      const before = { ...this.networkPredictedPosition };
+      this.networkPredictedPosition = advancePredictedMove(this.networkPredictedPosition, latest, PLAYER_SPEED, deltaSeconds);
+      this.networkPredictedPosition.y = this.world.grid.heightAt(this.networkPredictedPosition.x, this.networkPredictedPosition.z);
+      const dx = this.networkPredictedPosition.x - before.x;
+      const dz = this.networkPredictedPosition.z - before.z;
+      if (Math.hypot(dx, dz) > 0.0001 && this.player.state !== 'dead') {
+        const desiredFacing = Math.atan2(dx, dz);
+        this.player.facing = interpolateAngle(this.player.facing, desiredFacing, 1 - Math.exp(-deltaSeconds * 16));
+        this.player.state = 'walk';
+      }
+    } else if (this.networkGoal && this.player.state !== 'dead') {
+      const distance = Math.hypot(
+        this.networkPredictedPosition.x - this.networkGoal.x,
+        this.networkPredictedPosition.z - this.networkGoal.z,
+      );
+      if (distance <= 0.05) {
+        if (this.player.state !== 'walk') this.networkGoal = null;
+      } else {
+        const before = { ...this.networkPredictedPosition };
+        this.networkPredictedPosition = advancePredictedMove(this.networkPredictedPosition, this.networkGoal, PLAYER_SPEED, deltaSeconds);
+        this.networkPredictedPosition.y = this.world.grid.heightAt(this.networkPredictedPosition.x, this.networkPredictedPosition.z);
+        const dx = this.networkPredictedPosition.x - before.x;
+        const dz = this.networkPredictedPosition.z - before.z;
+        if (Math.hypot(dx, dz) > 0.0001) {
+          const desiredFacing = Math.atan2(dx, dz);
+          this.player.facing = interpolateAngle(this.player.facing, desiredFacing, 1 - Math.exp(-deltaSeconds * 16));
+          this.player.state = 'walk';
+        }
+      }
+    }
+    if (this.networkPredictedPosition) this.player.position = { ...this.networkPredictedPosition };
+  }
+
+  private updateNetworkActors(deltaSeconds: number): void {
+    const now = performance.now();
+    const renderTime = calculateSnapshotRenderTime(
+      this.networkServerTime,
+      this.networkClockReceivedAt,
+      now,
+      this.networkInterpolationMs,
+    );
+    const frame = this.networkSnapshots.sample(renderTime);
+    const smoothing = 1 - Math.exp(-Math.max(0, deltaSeconds) * 14);
+    for (const actor of this.actors.values()) {
+      const state = frame.actors.get(actor.id);
+      if (!state) continue;
+      if (actor !== this.player) {
+        actor.position.x = state.position.x;
+        actor.position.y = state.position.y;
+        actor.position.z = state.position.z;
+        actor.facing = interpolateAngle(actor.facing, state.facing, smoothing);
+        actor.state = state.state;
+        actor.hp = state.hp;
+        actor.maxHp = state.maxHp;
+        actor.targetId = state.targetId ?? undefined;
+        actor.nextAttackAt = state.nextAttackAt;
+      } else if (this.predictedMoves.size === 0) {
+        actor.facing = interpolateAngle(actor.facing, state.facing, smoothing);
+      }
+    }
   }
 
   public start(): void {
@@ -187,8 +673,16 @@ export class Game {
 
   private update(deltaSeconds: number): void {
     this.time += deltaSeconds;
-    this.updatePlayer(deltaSeconds);
-    this.updatePorings(deltaSeconds);
+    if (this.networkMode) {
+      // The room simulation owns every gameplay transform and resource.  The
+      // only local simulation here is the explicitly bounded movement
+      // prediction used to make a ground click feel immediate.
+      this.updateNetworkPrediction(deltaSeconds);
+      this.updateNetworkActors(deltaSeconds);
+    } else {
+      this.updatePlayer(deltaSeconds);
+      this.updatePorings(deltaSeconds);
+    }
     this.updateFloorItems();
     this.camera.update(deltaSeconds * 1000, this.player.position);
     this.updateVisuals();
@@ -500,6 +994,50 @@ export class Game {
     }
   }
 
+  private requestGroundMove(cell: GridCell): void {
+    if (!this.multiplayer) {
+      this.addMessage('The room connection is not ready yet.');
+      return;
+    }
+    this.player.targetId = undefined;
+    this.networkGoal = { x: cell.x + 0.5, z: cell.z + 0.5 };
+    this.networkGoalIssuedAt = performance.now();
+    this.multiplayer.sendIntent('move', { x: cell.x, z: cell.z });
+    this.syncPredictedMoves();
+    this.addMessage('Moving…');
+  }
+
+  private requestTarget(actor: Actor): void {
+    if (!this.multiplayer) {
+      this.addMessage('The room connection is not ready yet.');
+      return;
+    }
+    this.player.targetId = actor.id;
+    this.networkGoal = null;
+    this.multiplayer.sendIntent('target', { targetId: actor.id });
+    this.addMessage(`Targeting ${actor.name ?? actor.id.replace('poring-', 'Poring ')}.`);
+  }
+
+  private requestPickup(item: FloorItem): void {
+    if (!this.multiplayer) {
+      this.addMessage('The room connection is not ready yet.');
+      return;
+    }
+    this.multiplayer.sendIntent('pickup', { itemId: item.itemId });
+    this.addMessage(`Picking up ${ITEM_DEFINITIONS[item.itemId]?.name ?? item.itemId}…`);
+  }
+
+  private requestAttack(): boolean {
+    if (!this.multiplayer) {
+      this.addMessage('The room connection is not ready yet.');
+      return false;
+    }
+    this.networkGoal = null;
+    this.multiplayer.sendIntent('attack', {});
+    this.addMessage('Attack requested.');
+    return true;
+  }
+
   private spawnFloorItem(itemId: string, position: Vec3): void {
     const definition = ITEM_DEFINITIONS[itemId];
     const material = new THREE.SpriteMaterial({
@@ -554,16 +1092,22 @@ export class Game {
     if (screenTarget) {
       if (screenTarget.kind === 'floor-item') {
         const item = this.floorItems.find((candidate) => candidate.id === screenTarget.id);
-        if (item) this.pickupItem(item);
+        if (item) {
+          if (this.networkMode) this.requestPickup(item);
+          else this.pickupItem(item);
+        }
         return;
       }
       const actor = this.actors.get(screenTarget.id);
       if (actor && actor.id !== this.player.id && actor.state !== 'dead') {
-        this.player.targetId = actor.id;
-        this.player.path = [];
-        this.player.pathGoal = undefined;
-        this.player.nextPathRefreshAt = 0;
-        this.addMessage(`Targeting ${actor.id.replace('poring-', 'Poring ')}.`);
+        if (this.networkMode) this.requestTarget(actor);
+        else {
+          this.player.targetId = actor.id;
+          this.player.path = [];
+          this.player.pathGoal = undefined;
+          this.player.nextPathRefreshAt = 0;
+          this.addMessage(`Targeting ${actor.id.replace('poring-', 'Poring ')}.`);
+        }
       }
       return;
     }
@@ -581,17 +1125,23 @@ export class Game {
       const data = objectHit.object.userData as { kind?: string; id?: string };
       if (data.kind === 'floor-item' && data.id) {
         const item = this.floorItems.find((candidate) => candidate.id === data.id);
-        if (item) this.pickupItem(item);
+        if (item) {
+          if (this.networkMode) this.requestPickup(item);
+          else this.pickupItem(item);
+        }
         return;
       }
       if (data.kind === 'actor' && data.id && data.id !== this.player.id) {
         const actor = this.actors.get(data.id);
         if (actor && actor.state !== 'dead') {
-          this.player.targetId = actor.id;
-          this.player.path = [];
-          this.player.pathGoal = undefined;
-          this.player.nextPathRefreshAt = 0;
-          this.addMessage(`Targeting ${actor.id.replace('poring-', 'Poring ')}.`);
+          if (this.networkMode) this.requestTarget(actor);
+          else {
+            this.player.targetId = actor.id;
+            this.player.path = [];
+            this.player.pathGoal = undefined;
+            this.player.nextPathRefreshAt = 0;
+            this.addMessage(`Targeting ${actor.id.replace('poring-', 'Poring ')}.`);
+          }
         }
         return;
       }
@@ -605,8 +1155,12 @@ export class Game {
       this.addMessage('That cell cannot be reached.');
       return;
     }
-    this.player.targetId = undefined;
-    this.setPath(this.player, cell);
+    if (this.networkMode) {
+      this.requestGroundMove(cell);
+    } else {
+      this.player.targetId = undefined;
+      this.setPath(this.player, cell);
+    }
   }
 
   private pickScreenTarget(clientX: number, clientY: number): { kind: 'actor' | 'floor-item'; id: string } | null {
@@ -688,7 +1242,11 @@ export class Game {
   private useAttackShortcut(): void {
     const target = this.targetActor();
     if (!target || target.state === 'dead') {
-      this.addMessage('Select a living Poring first.');
+      this.addMessage('Select a living target first.');
+      return;
+    }
+    if (this.networkMode) {
+      this.requestAttack();
       return;
     }
     if (distance2D(this.player.position, target.position) > ATTACK_RANGE) {
@@ -719,6 +1277,21 @@ export class Game {
       this.addMessage('You are already at full health.');
       return;
     }
+    if (this.inventory.count('apple') <= 0) {
+      this.addMessage('You have no Apple.');
+      return;
+    }
+
+    if (this.networkMode) {
+      if (!this.multiplayer) {
+        this.addMessage('The room connection is not ready yet.');
+        return;
+      }
+      this.multiplayer.sendIntent('use_item', { itemId });
+      this.addMessage('Apple requested. Waiting for the room to confirm it.');
+      return;
+    }
+
     if (!this.inventory.remove(itemId, 1)) {
       this.addMessage('You have no Apple.');
       return;
@@ -789,7 +1362,10 @@ export class Game {
         slot.title = '';
         return;
       }
-      const definition = ITEM_DEFINITIONS[stack.itemId];
+      const definition = ITEM_DEFINITIONS[stack.itemId] ?? {
+        name: stack.itemId,
+        glyph: '?',
+      };
       slot.classList.add('has-item');
       content.icon.textContent = definition.glyph;
       content.quantity.textContent = String(stack.quantity);
@@ -836,28 +1412,46 @@ export class Game {
   }
 
   private updateHud(): void {
+    const target = this.targetActor();
+    const targetVisible = Boolean(target && target.state !== 'dead');
+    const canHeal = this.player.hp < this.player.maxHp && this.inventory.count('apple') > 0;
+    const attackReady = targetVisible && (this.networkMode
+      ? this.networkServerTime >= this.player.nextAttackAt
+      : this.time >= this.player.nextAttackAt);
+    const activeMessages = this.messages.filter((message) => message.expiresAt > this.time);
+    const messageSignature = activeMessages.map((message) => message.text).join('|');
+    const hudSignature = [
+      this.player.hp,
+      this.player.maxHp,
+      canHeal ? 1 : 0,
+      target?.id ?? '',
+      target?.state ?? '',
+      target?.hp ?? 0,
+      target?.maxHp ?? 0,
+      attackReady ? 1 : 0,
+      messageSignature,
+    ].join('|');
+    if (hudSignature === this.lastHudSignature) return;
+    this.lastHudSignature = hudSignature;
+
     this.ui.playerHpLabel.textContent = `${this.player.hp} / ${this.player.maxHp}`;
     this.ui.playerHpFill.style.width = `${Math.max(0, this.player.hp / this.player.maxHp * 100)}%`;
-    const canHeal = this.player.hp < this.player.maxHp && this.inventory.count('apple') > 0;
     this.ui.healSlot.classList.toggle('active', canHeal);
     this.ui.healSlot.setAttribute('aria-disabled', String(!canHeal));
 
-    const target = this.targetActor();
-    if (target && target.state !== 'dead') {
+    if (targetVisible && target) {
       this.ui.targetPanel.classList.remove('is-hidden');
-      this.ui.targetName.textContent = target.id.replace('poring-', 'Poring ');
+      this.ui.targetName.textContent = target.name ?? target.id.replace('poring-', 'Poring ');
       this.ui.targetHpLabel.textContent = `${target.hp} / ${target.maxHp}`;
       this.ui.targetHpFill.style.width = `${Math.max(0, target.hp / target.maxHp * 100)}%`;
-      this.ui.attackSlot.classList.toggle('active', this.time >= this.player.nextAttackAt);
+      this.ui.attackSlot.classList.toggle('active', attackReady);
     } else {
       this.ui.targetPanel.classList.add('is-hidden');
       this.ui.attackSlot.classList.remove('active');
     }
 
-    const activeMessages = this.messages.filter((message) => message.expiresAt > this.time);
-    const signature = activeMessages.map((message) => message.text).join('|');
-    if (signature !== this.lastMessageSignature) {
-      this.lastMessageSignature = signature;
+    if (messageSignature !== this.lastMessageSignature) {
+      this.lastMessageSignature = messageSignature;
       this.ui.messageLog.replaceChildren(...activeMessages.map((message) => {
         const line = document.createElement('div');
         line.className = 'message-line';

@@ -16,8 +16,13 @@
         <div id="hud">
           <header class="brand-panel">
             <span class="brand-title">PAYON FOREST</span>
-            <span class="brand-subtitle">classic single-player study</span>
+            <span id="brand-subtitle" class="brand-subtitle">classic single-player study</span>
           </header>
+
+          <section id="connection-panel" class="connection-panel is-hidden" role="status" aria-live="polite">
+            <span id="connection-status">OFFLINE</span>
+            <span id="connection-message"></span>
+          </section>
 
           <section id="player-panel" class="status-panel">
             <div class="status-heading">
@@ -80,6 +85,6 @@
         </aside>
       </section>
     </main>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="./src/main.ts"></script>
   </body>
 </html>

@@ -97,6 +97,46 @@ body {
   font-size: 9px;
 }
 
+.connection-panel {
+  position: absolute;
+  top: 88px;
+  left: 50%;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  max-width: min(430px, 52%);
+  padding: 5px 8px;
+  color: #d9e8c0;
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  background: rgba(22, 30, 20, 0.82);
+  border: 1px solid #6f8b5c;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+#connection-status {
+  color: #b9ef83;
+  font-weight: 700;
+}
+
+.connection-panel.is-connecting #connection-status {
+  color: #f4d477;
+}
+
+.connection-panel.is-reconnecting #connection-status,
+.connection-panel.is-error #connection-status {
+  color: #ff9b79;
+}
+
+#connection-message {
+  overflow: hidden;
+  color: #e4d8a5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-panel {
   position: absolute;
   top: 11px;

@@ -167,4 +167,28 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
+### MMO backend ###
+node_modules/
+backend/vendor/
+backend/secrets.yml
+backend/secrets-*.yml
+backend/secrets.*.yml
+backend/.env
+backend/.env.*
+backend/*.key
+backend/*.pem
+backend/*.p12
+backend/*.pfx
+backend/.phpunit.cache/
+backend/runtime/*
+!backend/runtime/.gitkeep
+backend/public/game/
+backend/*phpinfo*.html
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+
 # End of https://www.toptal.com/developers/gitignore/api/windows,macos,jetbrains+all,visualstudiocode

@@ -108,6 +108,26 @@ export class Inventory {
     return remaining === 0;
   }
 
+  /** Replace the local view with an authoritative server inventory. */
+  public replace(authoritativeSlots: ReadonlyArray<ItemStack | null>): void {
+    if (authoritativeSlots.length !== this.capacity) {
+      throw new Error(`Inventory must contain exactly ${this.capacity} slots`);
+    }
+    const replacement: Array<ItemStack | null> = [];
+    for (let index = 0; index < this.capacity; index += 1) {
+      const stack = authoritativeSlots[index];
+      if (stack === null) {
+        replacement.push(null);
+        continue;
+      }
+      if (!stack.itemId || !Number.isInteger(stack.quantity) || stack.quantity <= 0) {
+        throw new Error('Invalid authoritative inventory stack');
+      }
+      replacement.push({ itemId: stack.itemId, quantity: stack.quantity });
+    }
+    this.slots.splice(0, this.slots.length, ...replacement);
+  }
+
   public getSlots(): ReadonlyArray<ItemStack | null> {
     return this.slots;
   }

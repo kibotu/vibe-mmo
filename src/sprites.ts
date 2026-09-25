@@ -282,6 +282,13 @@ export class SpriteActor {
   public setShadowScale(scale: number): void {
     this.shadow.scale.set(scale, 1, scale);
   }
+
+  public dispose(): void {
+    this.root.removeFromParent();
+    this.material.dispose();
+    this.shadow.geometry.dispose();
+    (this.shadow.material as THREE.Material).dispose();
+  }
 }
 
 export const stateToSpriteAction = (state: ActorState): SpriteAction => state;

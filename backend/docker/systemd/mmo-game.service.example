@@ -1,0 +1,28 @@
+[Unit]
+Description=Payon Forest authoritative PHP game server
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mmo
+Group=www-data
+WorkingDirectory=/var/www/mmo
+ExecStart=/usr/bin/php /var/www/mmo/bin/game-server.php
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+KillSignal=SIGTERM
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=128
+LimitNOFILE=4096
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/www/mmo/runtime
+
+[Install]
+WantedBy=multi-user.target

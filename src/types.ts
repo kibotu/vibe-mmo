@@ -18,6 +18,8 @@ export type ActorState = 'idle' | 'walk' | 'attack' | 'hurt' | 'dead';
 export interface Actor {
   id: string;
   kind: ActorKind;
+  /** Display name supplied by the authoritative multiplayer server. */
+  name?: string;
   position: Vec3;
   facing: number;
   state: ActorState;

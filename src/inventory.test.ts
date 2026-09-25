@@ -24,4 +24,14 @@ describe('inventory mutations', () => {
     expect(inventory.add('apple', 1)).toBe(1);
     expect(inventory.getSlots().filter(Boolean)).toHaveLength(inventory.capacity);
   });
+
+  it('atomically replaces the view with an authoritative twenty-slot inventory', () => {
+    const inventory = new Inventory();
+    inventory.add('jellopy', 2);
+    const authoritative = Array.from({ length: inventory.capacity }, (_, index) =>
+      index === 0 ? { itemId: 'apple', quantity: 3 } : null);
+    inventory.replace(authoritative);
+    expect(inventory.getSlots()[0]).toEqual({ itemId: 'apple', quantity: 3 });
+    expect(inventory.count('jellopy')).toBe(0);
+  });
 });

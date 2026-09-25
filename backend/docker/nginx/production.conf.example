@@ -1,0 +1,72 @@
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name mmo.kibotu.net;
+
+    root /var/www/mmo/public;
+    index lobby.php;
+
+    ssl_certificate /etc/letsencrypt/live/mmo.kibotu.net/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mmo.kibotu.net/privkey.pem;
+
+    client_max_body_size 64k;
+    server_tokens off;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location = / {
+        rewrite ^ /lobby.php last;
+    }
+
+    location = /game {
+        return 301 /game/;
+    }
+
+    location /game/ {
+        index index.html;
+        try_files $uri $uri/ /game/index.html;
+    }
+
+    location = /ws {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+        access_log off;
+    }
+
+    location ~* ^/(?:bin|database|docker|runtime|src|tests|vendor)(?:/|$) {
+        deny all;
+    }
+
+    location ~* ^/(?:composer\.(?:json|lock)|secrets\.ya?ml(?:\.example)?)(?:$|/) {
+        deny all;
+    }
+
+    location ~ \.php$ {
+        try_files $uri =404;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param HTTP_PROXY "";
+        fastcgi_param HTTPS on;
+        fastcgi_pass 127.0.0.1:9000;
+    }
+
+    location ~ /\.(?!well-known) {
+        deny all;
+    }
+
+    location ~* \.(?:bak|conf|dist|ini|log|sh|sql|swp|yaml|yml)$ {
+        deny all;
+    }
+}

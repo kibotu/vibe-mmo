@@ -1,0 +1,84 @@
+name: Backend
+
+permissions:
+  contents: read
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - "src/**"
+      - "index.html"
+      - "scripts/**"
+      - "tsconfig.json"
+      - "compose.yaml"
+      - "compose.prod.yaml"
+      - ".dockerignore"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.ts"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "src/**"
+      - "index.html"
+      - "scripts/**"
+      - "tsconfig.json"
+      - "compose.yaml"
+      - "compose.prod.yaml"
+      - ".dockerignore"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.ts"
+      - ".github/workflows/backend.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          extensions: json, openssl, pdo, pdo_mysql
+          coverage: none
+          tools: composer:v2
+
+      - run: composer install --no-interaction --prefer-dist
+      - run: composer check-platform-reqs --no-dev
+      - run: composer audit
+      - run: cp secrets.yml.example secrets.yml
+      - run: composer lint
+      - run: composer test
+      - run: docker compose -f ../compose.yaml config --quiet
+      - run: docker compose -f ../compose.prod.yaml config --quiet
+      - run: docker compose -f ../compose.prod.yaml build config php web
+      - run: docker compose -f ../compose.prod.yaml run --rm config
+      - run: docker run --rm --entrypoint sh mmo-backend-prod:php -c 'test ! -e /var/www/html/backend/secrets.yml && test ! -e /var/www/html/backend/secrets.yml.example'
+      - run: |
+          docker run --rm --entrypoint php mmo-backend-prod:php -r 'require "/var/www/html/backend/vendor/autoload.php"; exit(class_exists("Mmo\\Config\\Config") ? 0 : 1);'
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

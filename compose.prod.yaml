@@ -1,0 +1,124 @@
+name: mmo-prod
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  config:
+    image: mmo-backend-prod:php
+    build:
+      context: ./backend
+    command: ["php", "/var/www/html/backend/docker/config-init.php"]
+    volumes:
+      - type: bind
+        source: ./backend/secrets.yml
+        target: /var/www/html/backend/secrets.yml
+        read_only: true
+        bind:
+          create_host_path: false
+      - config-data:/run/mmo-config
+    network_mode: none
+    logging: *default-logging
+    restart: "no"
+
+  db:
+    image: mariadb:10.11
+    depends_on:
+      config:
+        condition: service_completed_successfully
+    environment:
+      MARIADB_ROOT_PASSWORD_FILE: /run/mmo-config/root_password
+      MARIADB_DATABASE_FILE: /run/mmo-config/database
+      MARIADB_USER_FILE: /run/mmo-config/user
+      MARIADB_PASSWORD_FILE: /run/mmo-config/password
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - config-data:/run/mmo-config:ro
+      - database-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    logging: *default-logging
+    restart: unless-stopped
+    stop_grace_period: 30s
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    networks:
+      - backend
+
+  php:
+    image: mmo-backend-prod:php
+    build:
+      context: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ./backend/secrets.yml
+        target: /var/www/html/backend/secrets.yml
+        read_only: true
+        bind:
+          create_host_path: false
+      - runtime-data:/var/www/html/backend/runtime
+    expose:
+      - "9000"
+      - "8080"
+    logging: *default-logging
+    restart: unless-stopped
+    stop_grace_period: 20s
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 9000) ? 0 : 1);"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks:
+      - backend
+
+  web:
+    build:
+      context: .
+      dockerfile: backend/docker/web.Dockerfile
+    depends_on:
+      php:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18081:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/api/health.php"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging: *default-logging
+    restart: unless-stopped
+    stop_grace_period: 10s
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    networks:
+      - edge
+      - backend
+
+volumes:
+  config-data:
+  database-data:
+  runtime-data:
+
+networks:
+  edge:
+  backend:
+    internal: true

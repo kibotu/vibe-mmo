@@ -1,0 +1,14 @@
+.git
+.phpunit.cache
+Dockerfile
+docker-compose*.yml
+*phpinfo*.html
+secrets*.yml*
+.env*
+*.key
+*.pem
+*.p12
+tests
+vendor
+runtime
+public/game

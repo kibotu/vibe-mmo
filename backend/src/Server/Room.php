@@ -120,9 +120,20 @@ final class Room
         return $actor;
     }
 
-    /** @return list<array<string, mixed>> Snapshots of every player in the room. */
-    public function pollingPlayerSnapshots(): array
+    /**
+     * A single player actor, so a poll can report that caller's own inventory and
+     * input watermark. Those are per-player and must not leak between players
+     * sharing a room.
+     */
+    public function playerActor(string $publicId): ?Actor
     {
+        $actor = $this->actors[$publicId] ?? null;
+
+        return $actor !== null && $actor->isPlayer() ? $actor : null;
+    }
+
+    /** @return list<array<string, mixed>> Snapshots of every player in the room. */
+    public function pollingPlayerSnapshots(): array    {
         $snapshots = [];
         foreach ($this->actors as $actor) {
             if ($actor->isPlayer()) {

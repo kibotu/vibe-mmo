@@ -14,6 +14,7 @@ use Mmo\Database\PlayerRepository;
 use Mmo\Database\RoomRepository;
 use Mmo\Database\SessionRepository;
 use Mmo\Server\PollingRoomService;
+use Mmo\Server\PollingSnapshot;
 use Mmo\Server\RoomStateCodec;
 use Mmo\Server\RoomStateRepository;
 use Mmo\Support\BackendPaths;
@@ -79,7 +80,7 @@ final class Application
             $guests,
             $admin,
             $control,
-            new PollingRoomService($application, $roomStates, new RoomStateCodec()),
+            new PollingRoomService($application, $roomStates, new RoomStateCodec(), new PollingSnapshot()),
             $roomStates,
         );
     }

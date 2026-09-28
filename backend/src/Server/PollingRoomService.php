@@ -25,6 +25,7 @@ final class PollingRoomService
         private readonly Application $application,
         private readonly RoomStateRepository $states,
         private readonly RoomStateCodec $codec,
+        private readonly PollingSnapshot $snapshots,
     ) {
     }
 
@@ -55,7 +56,7 @@ final class PollingRoomService
         if (!$this->states->acquireLock($roomCode)) {
             // Another request is simulating this room right now. Answer with the
             // state as it stands rather than piling up behind the lock.
-            return $this->snapshot($room, $now, 0, false);
+            return $this->snapshots->build($room, $self->publicId, $now, 0, false);
         }
 
         try {
@@ -93,7 +94,7 @@ final class PollingRoomService
             $encoded = $this->codec->encode($room);
             $this->states->save($roomCode, $encoded['state'], $encoded['tick'], microtime(true));
 
-            $response = $this->snapshot($room, microtime(true), $outcome['applied'], true);
+            $response = $this->snapshots->build($room, $self->publicId, microtime(true), $outcome['applied'], true);
             $response['steps'] = $steps;
             $response['simulatedSeconds'] = round($elapsed, 4);
             $response['events'] = $connection->drain();
@@ -170,33 +171,5 @@ final class PollingRoomService
         }
 
         return ['applied' => $applied, 'rejected' => $rejected];
-    }
-
-    /** @return array<string, mixed> */
-    private function snapshot(Room $room, float $now, int $applied, bool $final): array
-    {
-        $actors = [];
-        foreach ($room->pollingPlayerSnapshots() as $actor) {
-            $actors[] = $actor;
-        }
-        foreach ($room->poringActors() as $poring) {
-            if (!$poring->isDead()) {
-                $actors[] = $poring->snapshot();
-            }
-        }
-
-        return [
-            'type' => 'snapshot',
-            'tick' => $room->simulationTick(),
-            'serverTime' => round($now, 3),
-            'lastProcessedInput' => 0,
-            'intentsApplied' => $applied,
-            'simulated' => $final,
-            'actors' => $actors,
-            'items' => array_map(
-                static fn (\Mmo\Game\FloorItem $item): array => $item->snapshot(),
-                $room->floorItems(),
-            ),
-        ];
     }
 }

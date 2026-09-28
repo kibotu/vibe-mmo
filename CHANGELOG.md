@@ -96,6 +96,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   applied. Frames are now decoded into `{seq, intent, payload}`.
 - `bootstrap.ts` built the poll endpoint from the session's `wss://` address,
   which `fetch` cannot use. It is built from the page origin instead.
+- The polled snapshot omitted `inventory`, and the client parser requires exactly
+  20 slots, so every snapshot was refused and the browser sat on
+  `Protocol error: snapshot.inventory must contain exactly 20 slots`. The polled
+  `lastProcessedInput` was also hardcoded to `0`, which would have made the client
+  resend every intent forever; it now reports the caller's own watermark.
 - A deploy that reused a cached Composer install shipped a classmap missing every
   class added since that cache was built, so the application failed to boot with
   `Class Mmo\Server\RoomStateRepository not found` while the file sat correctly on
@@ -141,6 +146,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was confirmed to fail by mutating the source: removing the input-loss protection
   fails the retry test, removing the `seq >= 1` guard fails the malformed-frame
   test, and removing the per-iteration yield reproduces the busy loop.
+- `backend/tests/RoomSnapshotTest.php` pins the snapshot contract in both shapes,
+  the daemon's streamed snapshot and the polled document. The client parser is
+  strict, so a missing field is a total failure rather than a degraded one; this
+  was the gap HTTP-level tests could not see, and the inventory and watermark
+  regressions were both confirmed to fail by mutating `PollingSnapshot`.
 
 ## [0.3.0] - 2026-09-28
 

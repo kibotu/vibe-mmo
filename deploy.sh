@@ -190,8 +190,28 @@ trap 'exit 130' INT TERM
 # re-uploads all ~800 of them every run. Reusing one directory per lock file
 # keeps those timestamps stable, and the vendor tree is only re-uploaded when the
 # lock file itself actually changes.
+#
+# The key also covers the backend source layout. Dependencies are installed with
+# --classmap-authoritative, which writes a classmap of every autoloaded class and
+# disables the PSR-4 fallback. A cached classmap therefore goes stale the moment a
+# class is added, renamed, or removed, and the server then fails with
+# "Class Mmo\... not found" even though the file was uploaded. Hashing the sorted
+# source paths makes that an automatic cache miss.
 VENDOR_CACHE_ROOT="${MMO_VENDOR_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/mmo-deploy}"
-VENDOR_CACHE_DIR="$VENDOR_CACHE_ROOT/vendor-$(php -r 'echo substr(hash("sha256", file_get_contents($argv[1])), 0, 16);' "$BACKEND_DIR/composer.lock")"
+VENDOR_CACHE_KEY="$(
+  php -r '
+    $paths = [];
+    $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($argv[1], FilesystemIterator::SKIP_DOTS));
+    foreach ($iterator as $file) {
+      if ($file->isFile() && strtolower($file->getExtension()) === "php") {
+        $paths[] = substr($file->getPathname(), strlen($argv[1]) + 1);
+      }
+    }
+    sort($paths);
+    echo substr(hash("sha256", implode("\n", $paths)), 0, 16);
+  ' "$BACKEND_DIR/src"
+)"
+VENDOR_CACHE_DIR="$VENDOR_CACHE_ROOT/vendor-$(php -r 'echo substr(hash("sha256", file_get_contents($argv[1])), 0, 16);' "$BACKEND_DIR/composer.lock")-$VENDOR_CACHE_KEY"
 
 if [[ -f "$VENDOR_CACHE_DIR/vendor/autoload.php" ]]; then
   log "Reusing cached backend dependencies for this lock file"

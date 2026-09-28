@@ -66,6 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--upload-secrets` for `deploy.sh`, so a fresh server can be brought up in one
   run. Opt-in, and refused when `ftp.public_path` is empty or equal to
   `ftp.remote_path`, because that would put credentials in the document root.
+- The `deploy.sh` vendor cache is keyed by the backend source layout as well as by
+  the lock file. Dependencies install with `--classmap-authoritative`, which writes a
+  classmap and disables the PSR-4 fallback, so a cached classmap goes stale as soon
+  as a class is added, and the server then fails with `Class ... not found` even
+  though the file was uploaded correctly.
 
 ### Changed
 
@@ -91,6 +96,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   applied. Frames are now decoded into `{seq, intent, payload}`.
 - `bootstrap.ts` built the poll endpoint from the session's `wss://` address,
   which `fetch` cannot use. It is built from the page origin instead.
+- A deploy that reused a cached Composer install shipped a classmap missing every
+  class added since that cache was built, so the application failed to boot with
+  `Class Mmo\Server\RoomStateRepository not found` while the file sat correctly on
+  the server. The cache key now covers the source layout.
 - A migration endpoint is now named from 256 bits of random token rather than
   `<epoch>-$RANDOM`, which was guessable, and its exception is returned to the
   token holder with the database password masked, so a failed deploy is

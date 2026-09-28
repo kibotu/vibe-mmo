@@ -6,7 +6,7 @@ use Amp\Websocket\WebsocketClient;
 use Amp\Websocket\WebsocketClosedException;
 use Mmo\Protocol\InputSequencer;
 
-final class ClientConnection
+final class ClientConnection implements RoomConnection
 {
     public bool $connected = true;
     public bool $superseded = false;
@@ -19,7 +19,7 @@ final class ClientConnection
         public readonly string $forwardedIp,
         public readonly string $roomCode,
         public readonly WebsocketClient $client,
-        public readonly InputSequencer $inputSequencer,
+        private readonly InputSequencer $sequencer,
         public readonly float $connectedAt,
         ?float $lastSeen = null,
         public int $inboundMessages = 0,
@@ -27,6 +27,26 @@ final class ClientConnection
         public int $outboundBytes = 0,
     ) {
         $this->lastSeen = $lastSeen ?? $connectedAt;
+    }
+
+    public function inputSequencer(): InputSequencer
+    {
+        return $this->sequencer;
+    }
+
+    public function getId(): string
+    {
+        return $this->id;
+    }
+
+    public function getPlayerId(): string
+    {
+        return $this->playerId;
+    }
+
+    public function isConnected(): bool
+    {
+        return $this->connected;
     }
 
     /** @param array<string, mixed> $message */

@@ -32,7 +32,7 @@ final class Room
 
     /** @var array<string, Actor> */
     private array $actors = [];
-    /** @var array<string, ClientConnection> */
+    /** @var array<string, RoomConnection> */
     private array $connections = [];
     /** @var array<string, FloorItem> */
     private array $items = [];
@@ -103,6 +103,82 @@ final class Room
         return $this->simulationTick;
     }
 
+    /**
+     * Adds a player to the room without a connection.
+     *
+     * The long-polling path rebuilds a room per request, so every player in the
+     * room must be re-presented for porings to see them and for remote movement
+     * to be included in the snapshot. The actor is marked connected because it
+     * is, in the sense that matters to the simulation: a live player.
+     */
+    public function presentForPolling(PlayerRecord $record, ?float $now = null): Actor
+    {
+        $actor = $this->actors[$record->publicId] ?? $this->playerFromRecord($record, $now ?? microtime(true));
+        $actor->connected = true;
+        $actor->disconnectedAt = null;
+
+        return $actor;
+    }
+
+    /** @return list<array<string, mixed>> Snapshots of every player in the room. */
+    public function pollingPlayerSnapshots(): array
+    {
+        $snapshots = [];
+        foreach ($this->actors as $actor) {
+            if ($actor->isPlayer()) {
+                $snapshots[] = $actor->snapshot();
+            }
+        }
+
+        return $snapshots;
+    }
+
+    /** @return array<string, Actor> */
+    public function poringActors(): array
+    {
+        return array_filter(
+            $this->actors,
+            static fn (Actor $actor): bool => !$actor->isPlayer(),
+        );
+    }
+
+    /** @return list<FloorItem> */
+    public function floorItems(): array
+    {
+        return array_values($this->items);
+    }
+
+    public function addFloorItem(FloorItem $item): void
+    {
+        $this->items[$item->id] = $item;
+    }
+
+    public function clearFloorItems(): void
+    {
+        $this->items = [];
+    }
+
+    public function nextFloorItemId(): int
+    {
+        return $this->nextItemId;
+    }
+
+    public function lastEventId(): int
+    {
+        return $this->eventId;
+    }
+
+    /**
+     * Restores the counters a persisted room was rebuilt with. The long-polling
+     * path rebuilds a room per request, so identifiers must not restart at one.
+     */
+    public function restoreCounters(int $nextItemId, int $eventId, int $simulationTick): void
+    {
+        $this->nextItemId = max(1, $nextItemId);
+        $this->eventId = max(0, $eventId);
+        $this->simulationTick = max(0, $simulationTick);
+    }
+
     public function simulationTick(): int
     {
         return $this->simulationTick;
@@ -128,7 +204,7 @@ final class Room
     public function hasConnectionForPlayer(string $playerId): bool
     {
         foreach ($this->connections as $connection) {
-            if ($connection->playerId === $playerId) {
+            if ($connection->getPlayerId() === $playerId) {
                 return true;
             }
         }
@@ -136,7 +212,7 @@ final class Room
         return false;
     }
 
-    public function attach(PlayerRecord $record, ClientConnection $connection, float $now): Actor
+    public function attach(PlayerRecord $record, RoomConnection $connection, float $now): Actor
     {
         if ($this->connectionCount() >= $this->maxPlayers
             && !$this->hasConnectionForPlayer($record->publicId)
@@ -148,7 +224,7 @@ final class Room
         $actor = $this->actors[$record->publicId] ?? $this->playerFromRecord($record, $now);
         $actor->connected = true;
         $actor->disconnectedAt = null;
-        $this->connections[$connection->id] = $connection;
+        $this->connections[$connection->getId()] = $connection;
         if ($this->emptySince !== null) {
             $this->emptySince = null;
         }
@@ -159,13 +235,14 @@ final class Room
     public function detach(string $connectionId, float $now): void
     {
         $connection = $this->connections[$connectionId] ?? null;
-        if ($connection === null) {
+        if (!$connection instanceof ClientConnection) {
+            // A polled room has no persistent connection to tear down.
             return;
         }
         unset($this->connections[$connectionId]);
         $connection->connected = false;
-        $actor = $this->actors[$connection->playerId] ?? null;
-        if ($actor !== null && !$this->hasConnectionForPlayer($connection->playerId)) {
+        $actor = $this->actors[$connection->getPlayerId()] ?? null;
+        if ($actor !== null && !$this->hasConnectionForPlayer($connection->getPlayerId())) {
             $actor->connected = false;
             $actor->disconnectedAt = $now;
         }
@@ -218,25 +295,25 @@ final class Room
         }
     }
 
-    public function sendWelcome(ClientConnection $connection, float $serverTime): void
+    public function sendWelcome(RoomConnection $connection, float $serverTime): void
     {
         $connection->send([
             'type' => 'welcome',
-            'connectionId' => $connection->id,
-            'playerId' => $connection->playerId,
+            'connectionId' => $connection->getId(),
+            'playerId' => $connection->getPlayerId(),
             'room' => ['code' => $this->code, 'name' => $this->name],
             'seed' => $this->seed,
             'tickRate' => self::TICK_RATE,
             'snapshotRate' => self::SNAPSHOT_RATE,
             'interpolationMs' => 100,
-            'lastProcessedInput' => $connection->inputSequencer->lastProcessed(),
+            'lastProcessedInput' => $connection->inputSequencer()->lastProcessed(),
             'serverTime' => $serverTime,
         ]);
     }
 
-    public function sendSnapshot(ClientConnection $connection, int $tick, float $serverTime): void
+    public function sendSnapshot(RoomConnection $connection, int $tick, float $serverTime): void
     {
-        $actor = $this->actors[$connection->playerId] ?? null;
+        $actor = $this->actors[$connection->getPlayerId()] ?? null;
         $actorSnapshots = [];
         foreach ($this->actors as $candidate) {
             if ($candidate->isPlayer() && !$candidate->connected) {
@@ -252,25 +329,25 @@ final class Room
             'type' => 'snapshot',
             'tick' => $tick,
             'serverTime' => $serverTime,
-            'lastProcessedInput' => $connection->inputSequencer->lastProcessed(),
+            'lastProcessedInput' => $connection->inputSequencer()->lastProcessed(),
             'actors' => $actorSnapshots,
             'items' => $itemSnapshots,
             'inventory' => $actor?->inventory?->slots() ?? array_fill(0, Inventory::CAPACITY, null),
         ]);
     }
 
-    public function recordProcessedInput(ClientConnection $connection, int $sequence): void
+    public function recordProcessedInput(RoomConnection $connection, int $sequence): void
     {
-        $actor = $this->actors[$connection->playerId] ?? null;
+        $actor = $this->actors[$connection->getPlayerId()] ?? null;
         if ($actor !== null && $actor->isPlayer() && $sequence > $actor->lastProcessedInput) {
             $actor->lastProcessedInput = $sequence;
         }
     }
 
     /** @param array<string, int|string> $payload */
-    public function handleIntent(ClientConnection $connection, \Mmo\Protocol\Intent $intent, array $payload): void
+    public function handleIntent(RoomConnection $connection, \Mmo\Protocol\Intent $intent, array $payload): void
     {
-        $actor = $this->actors[$connection->playerId] ?? null;
+        $actor = $this->actors[$connection->getPlayerId()] ?? null;
         if ($actor === null || !$actor->isPlayer() || !$actor->connected) {
             throw new ProtocolException('not_connected', 'The player is not attached to this room.');
         }

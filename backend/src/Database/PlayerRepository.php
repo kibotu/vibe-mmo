@@ -27,8 +27,40 @@ final class PlayerRepository
         return PlayerRecord::fromRow($row, (string) $row['inventory']);
     }
 
-    /** @param list<PlayerSave> $players */
-    public function saveAll(array $players): int
+    /**
+     * Every player currently recorded in a room, oldest first.
+     *
+     * The long-polling runtime rebuilds a room per request and needs the whole
+     * roster so porings can see everyone and remote movement reaches the
+     * snapshot. The daemon does not use this; it holds its own roster in memory.
+     *
+     * @return list<PlayerRecord>
+     */
+    public function forRoom(string $roomCode, int $limit = 20): array
+    {
+        if ($roomCode === '') {
+            return [];
+        }
+
+        $statement = $this->database->pdo()->prepare(
+            'SELECT id, public_id, name, room_code, hp, x, y, z, inventory,
+                    last_processed_input, state, target_id, next_attack_at
+             FROM ' . $this->database->table('players')
+            . ' WHERE room_code = :room ORDER BY id LIMIT ' . max(1, $limit),
+        );
+        $statement->execute(['room' => $roomCode]);
+
+        $records = [];
+        foreach ($statement->fetchAll() as $row) {
+            if (is_array($row)) {
+                $records[] = PlayerRecord::fromRow($row, (string) $row['inventory']);
+            }
+        }
+
+        return $records;
+    }
+
+    /** @param list<PlayerSave> $players */    public function saveAll(array $players): int
     {
         if ($players === []) {
             return 0;

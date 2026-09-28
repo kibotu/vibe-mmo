@@ -59,25 +59,55 @@ npm run dev:multiplayer
 
 ## Architecture
 
+The authoritative simulation is identical on both runtimes. They differ only in
+where it lives.
+
 ```text
 browser / Three.js
     │ sequenced intents
     ▼
-nginx /ws
-    ▼
-long-running PHP WebSocket daemon
-    │ owns rooms, entities, combat, loot, inventory
-    ├── 20 Hz fixed simulation
-    └── 10 Hz JSON snapshots
+WebSocket  ──or──  long polling (POST /api/poll.php)
+    ▼                        ▼
+long-running PHP         request-scoped PHP
+WebSocket daemon         hydrates the room, steps it, writes it back
+    │                        │
+    └── 20 Hz fixed simulation, 10 Hz JSON snapshots ──┘
              │
              ├── client prediction for own movement
              └── interpolation for remote actors
 
 MariaDB
-    └── guest identity, room, HP, inventory, periodic position
+    ├── guest identity, room, HP, inventory
+    └── mmo_room_state: porings, floor items, tick, last simulated time
 ```
 
-The browser sends intents such as “move to this cell”, “target this actor”, or “use Apple”. It never sends authoritative position, damage, item ownership, cooldowns, or loot rolls. Socket loss leaves player state in RAM for a bounded reconnect window; MariaDB restores durable state after a daemon restart.
+**Choose the runtime from what the host can do, not from preference.**
+
+- **WebSocket** is the better runtime: one process ticks continuously, state is
+  held in RAM, and snapshots are pushed. Use it wherever a long-lived process
+  can run, such as the Docker runtime.
+- **Long polling** exists for shared hosting, which cannot keep a process alive.
+  The hosting PHP has no `pcntl` or `sockets` extension and a 60-second execution
+  limit, so a daemon is impossible. Each request therefore rebuilds the room
+  from `mmo_room_state`, applies the caller's queued intents, steps the
+  simulation by the elapsed wall-clock time, and writes the result back. A
+  `GET_LOCK` serialises concurrent pollers so two players cannot simulate the
+  same room at once.
+
+The client does not know which is in use. `MultiplayerClient` talks through a
+`WebSocketLike` interface, and long polling is an implementation of it, so the
+same client code drives either transport.
+
+**Cost.** Long polling holds one PHP-FPM worker for the duration of each poll, so
+concurrent players are bounded by the worker's pool rather than by CPU. Measured
+on the shared host: 13–27 ms per poll and a 5.3 kB snapshot, against a 20 Hz
+simulation that costs 0.026 ms per room. Shorten `rooms.max_catch_up_seconds` if
+a returning player must not wait.
+
+The browser sends intents such as “move to this cell”, “target this actor”, or
+“use Apple”. It never sends authoritative position, damage, item ownership,
+cooldowns, or loot rolls. Socket loss leaves player state in RAM for a bounded
+reconnect window; MariaDB restores durable state after a daemon restart.
 
 See [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md) for the wire protocol and lifecycle rules.
 

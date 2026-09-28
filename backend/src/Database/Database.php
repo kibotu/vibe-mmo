@@ -8,7 +8,7 @@ use PDO;
 final class Database
 {
     /** @var list<string> Unprefixed table names owned by this application. */
-    public const TABLES = ['schema_migrations', 'rooms', 'players', 'player_sessions'];
+    public const TABLES = ['schema_migrations', 'rooms', 'players', 'player_sessions', 'room_state'];
 
     private ?PDO $pdo = null;
 

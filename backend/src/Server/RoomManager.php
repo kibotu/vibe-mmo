@@ -101,7 +101,7 @@ final class RoomManager
             return;
         }
         try {
-            $connection->inputSequencer->accept($intent);
+            $connection->inputSequencer()->accept($intent);
             $room = $this->rooms[$connection->roomCode] ?? null;
             if ($room === null) {
                 throw new ProtocolException('room_missing', 'The room is no longer available.');

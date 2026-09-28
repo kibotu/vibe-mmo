@@ -44,8 +44,36 @@ final class RoomRepository
         return $rooms;
     }
 
-    public function isJoinable(string $code): bool
+    /**
+     * A single joinable room, including the world seed.
+     *
+     * The long-polling runtime rebuilds a room per request, so it needs the
+     * seed to regenerate the same terrain and poring spawn points. The seed
+     * lives in configuration rather than the table because the rooms schema
+     * predates the polling runtime and the daemon supplies it the same way.
+     *
+     * @return array{code: string, name: string, maxPlayers: int}|null
+     */
+    public function find(string $code): ?array
     {
+        $statement = $this->database->pdo()->prepare(
+            "SELECT code, name, max_players FROM " . $this->database->table('rooms')
+            . " WHERE code = :code AND status IN ('active', 'paused') LIMIT 1",
+        );
+        $statement->execute(['code' => $code]);
+        $row = $statement->fetch();
+        if (!is_array($row)) {
+            return null;
+        }
+
+        return [
+            'code' => substr((string) $row['code'], 0, 32),
+            'name' => substr((string) $row['name'], 0, 64),
+            'maxPlayers' => (int) $row['max_players'],
+        ];
+    }
+
+    public function isJoinable(string $code): bool    {
         $statement = $this->database->pdo()->prepare(
             'SELECT 1 FROM ' . $this->database->table('rooms')
             . ' WHERE code = :code AND status IN (\'active\', \'paused\') LIMIT 1',

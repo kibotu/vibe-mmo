@@ -94,7 +94,36 @@ The repository root `deploy.sh` is the supported sync tool for this repository:
 
 It reads only this repository's `backend/secrets.yml`. It builds and tests the multiplayer client, stages private backend files plus the public client, mirrors stale files while preserving remote `secrets.yml` and `runtime/`, and runs a short-lived migration endpoint protected by a random request token. The migration endpoint is removed in a cleanup trap, and the backend's checksummed migration table makes reruns idempotent.
 
-The FTP path is for PHP pages and the static multiplayer client. It is not a replacement for the persistent WebSocket daemon. For the Docker VPS path, use:
+The FTP path is for PHP pages and the static multiplayer client. It cannot host the
+WebSocket daemon, because a shared host provides no long-lived process. Multiplayer
+there runs over long polling instead, which needs `secrets.yml` on the server as
+well as the code:
+
+```bash
+./deploy.sh --upload-secrets
+```
+
+This uploads `secrets.yml` to the FTP root. It is opt-in, and the script refuses
+to do it when `ftp.public_path` is empty or equal to `ftp.remote_path`, because
+that would place the file inside the document root. The file is safe above
+`public_path` only: with `remote_path: /` and `public_path: /public`, requests for
+`/secrets.yml`, `/vendor/autoload.php`, and `/database/migrations/` all return
+404.
+
+Two settings differ between the local Compose runtime and the server, because
+their topologies differ. Only the code is shared:
+
+| Setting | Docker | FTP host |
+| --- | --- | --- |
+| `database.host` | `db` (Compose service) | `localhost` |
+| `ftp.public_url` | unused | `https://your-domain` |
+
+`backend/secrets.yml` holds the shared values and is the file `deploy.sh`
+uploads. `backend/secrets.docker.yml` holds the Compose-only override, and
+`docker/merge-secrets.php` merges the two into the file the containers read, so
+neither file has to be edited by hand.
+
+For the Docker VPS path, use:
 
 ```bash
 ./deploy.sh --mode docker

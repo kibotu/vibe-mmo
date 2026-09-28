@@ -1,8 +1,10 @@
 import { cameraProfileFor } from './camera';
 import { Game } from './game';
 import { fetchMultiplayerSession, MultiplayerClient } from './multiplayer';
+import { PollingTransport } from './polling';
 
 const SESSION_ENDPOINT = '/api/session.php';
+const POLL_ENDPOINT = '/api/poll.php';
 
 const readyWindow = window as Window & {
   __RO_GAME__?: Game;
@@ -77,6 +79,20 @@ export const startMultiplayer = async (): Promise<void> => {
   const client = new MultiplayerClient({
     session,
     refreshSession: () => fetchMultiplayerSession(SESSION_ENDPOINT),
+    // The WebSocket daemon cannot run on shared hosting, so the same client is
+    // driven over long polling. Both transports satisfy WebSocketLike, which is
+    // why nothing downstream needs to know which one is in use.
+    //
+    // The endpoint is built from the page origin rather than the session's
+    // socket URL: the client is served from /game/ and the session advertises a
+    // wss:// address, so reusing it would produce an unschedulable fetch.
+    webSocketFactory: () => {
+      const transport = new PollingTransport({
+        endpoint: `${window.location.origin}${POLL_ENDPOINT}`,
+      });
+      transport.start();
+      return transport;
+    },
   });
   readyWindow.__RO_GAME__ = game;
   readyWindow.__RO_MULTIPLAYER__ = client;

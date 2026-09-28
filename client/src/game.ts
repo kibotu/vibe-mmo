@@ -21,8 +21,14 @@ import { SpriteActor, SpriteTextureLibrary } from './sprites';
 import { World } from './world';
 import type { Actor, FloorItem, GridCell, Vec3 } from './types';
 
-const VIEWPORT_WIDTH = 800;
-const VIEWPORT_HEIGHT = 600;
+// The canvas backing store now follows the real element size, so these are no
+// longer the render resolution. They only set how far a drag must travel to
+// cover a given angle, which should feel identical on a phone and a desktop.
+const DRAG_REFERENCE_WIDTH = 800;
+const DRAG_REFERENCE_HEIGHT = 600;
+// Phones report 3x, desktops 2x. 2 is the point where extra samples stop being
+// visible on this art style but still cost real fill rate.
+const MAX_PIXEL_RATIO = 2;
 const PLAYER_SPEED = 4;
 const PORING_SPEED = 1.15;
 const PORING_RESPAWN_DELAY = 5;
@@ -138,6 +144,9 @@ export class Game {
   private lastInventorySignature = '';
   private lastHudSignature = '';
   private hoveredCell: GridCell | null = null;
+  private viewportWidth = 1;
+  private viewportHeight = 1;
+  private readonly viewportObserver: ResizeObserver;
 
   public constructor(
     canvas: HTMLCanvasElement,
@@ -153,7 +162,7 @@ export class Game {
     this.configuredInterpolationMs = Math.max(0, options.interpolationMs ?? 100);
     this.networkPlayerId = options.playerId;
     this.networkInterpolationMs = this.configuredInterpolationMs;
-    this.camera = new ROCamera(VIEWPORT_WIDTH / VIEWPORT_HEIGHT, profile);
+    this.camera = new ROCamera(1, profile);
     this.random = new Random(seed);
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -161,11 +170,17 @@ export class Game {
       alpha: false,
       powerPreference: 'high-performance',
     });
-    this.renderer.setPixelRatio(1);
-    this.renderer.setSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT, false);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.setClearColor(0x719b70, 1);
+    this.resizeViewport();
+
+    // Layout changes and orientation flips arrive via ResizeObserver; a window
+    // resize additionally covers dragging the window across displays, which
+    // changes devicePixelRatio without changing the element's CSS box.
+    this.viewportObserver = new ResizeObserver(() => this.resizeViewport());
+    this.viewportObserver.observe(this.canvas);
+    window.addEventListener('resize', () => this.resizeViewport());
 
     this.scene.background = new THREE.Color(0x719b70);
     this.scene.fog = new THREE.Fog(0x719b70, 90, 220);
@@ -231,6 +246,7 @@ export class Game {
       onPrimary: (x, y) => this.handlePrimary(x, y),
       onHover: (x, y) => this.handleHover(x, y),
       onCameraDrag: (dx, dy, shift, control) => this.handleCameraDrag(dx, dy, shift, control),
+      onPinch: (scale) => this.handlePinch(scale),
       onWheel: (delta, shift) => this.handleWheel(delta, shift),
       onDoubleRight: (shift) => this.camera.reset(shift),
       onToggleInventory: () => this.toggleInventory(),
@@ -242,7 +258,7 @@ export class Game {
     if (this.networkMode) {
       this.addMessage(`Connecting to ${this.configuredRoomName ?? 'the room'}…`);
     } else {
-      this.addMessage('Welcome to Payon Forest. Left-click a Poring to begin.');
+      this.addMessage('Welcome to Payon Forest. Click or tap a Poring to begin.');
       this.addMessage('The forest is quiet. No audio, as requested.');
     }
     this.updateInventoryUi(true);
@@ -656,6 +672,18 @@ export class Game {
         actor.facing = interpolateAngle(actor.facing, state.facing, smoothing);
       }
     }
+  }
+
+  private resizeViewport(): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width || window.innerWidth));
+    const height = Math.max(1, Math.round(rect.height || window.innerHeight));
+    if (width === this.viewportWidth && height === this.viewportHeight) return;
+    this.viewportWidth = width;
+    this.viewportHeight = height;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
+    this.renderer.setSize(width, height, false);
+    this.camera.setAspect(width / height);
   }
 
   public start(): void {
@@ -1165,8 +1193,8 @@ export class Game {
 
   private pickScreenTarget(clientX: number, clientY: number): { kind: 'actor' | 'floor-item'; id: string } | null {
     const rect = this.canvas.getBoundingClientRect();
-    const pointerX = (clientX - rect.left) / rect.width * VIEWPORT_WIDTH;
-    const pointerY = (clientY - rect.top) / rect.height * VIEWPORT_HEIGHT;
+    const pointerX = (clientX - rect.left) / rect.width * this.viewportWidth;
+    const pointerY = (clientY - rect.top) / rect.height * this.viewportHeight;
     let best: { kind: 'actor' | 'floor-item'; id: string; distance: number } | null = null;
 
     for (const actor of this.actors.values()) {
@@ -1176,7 +1204,7 @@ export class Game {
         x: actor.position.x,
         y: actor.position.y + bodyHeight,
         z: actor.position.z,
-      }, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+      }, this.viewportWidth, this.viewportHeight);
       const radius = actor.kind === 'player' ? 30 : 25;
       const distance = Math.hypot(pointerX - point.x, pointerY - point.y);
       if (point.visible && distance <= radius && (!best || distance < best.distance)) {
@@ -1189,7 +1217,7 @@ export class Game {
         x: item.object.position.x,
         y: item.object.position.y + 0.34,
         z: item.object.position.z,
-      }, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+      }, this.viewportWidth, this.viewportHeight);
       const distance = Math.hypot(pointerX - point.x, pointerY - point.y);
       if (point.visible && distance <= 20 && (!best || distance < best.distance)) {
         best = { kind: 'floor-item', id: item.id, distance };
@@ -1223,12 +1251,18 @@ export class Game {
 
   private handleCameraDrag(deltaX: number, deltaY: number, shift: boolean, control: boolean): void {
     if (shift) {
-      this.camera.adjustElevation((deltaY / VIEWPORT_HEIGHT) * 300);
+      this.camera.adjustElevation((deltaY / DRAG_REFERENCE_HEIGHT) * 300);
     } else if (control) {
-      this.camera.adjustDistance((deltaY / VIEWPORT_HEIGHT) * 30);
+      this.camera.adjustDistance((deltaY / DRAG_REFERENCE_HEIGHT) * 30);
     } else {
-      this.camera.adjustYaw(-(deltaX / VIEWPORT_WIDTH) * 720);
+      this.camera.adjustYaw(-(deltaX / DRAG_REFERENCE_WIDTH) * 720);
     }
+  }
+
+  private handlePinch(scale: number): void {
+    // Proportional so a pinch keeps its speed at any zoom level. Spreading the
+    // fingers apart pulls the camera closer.
+    this.camera.adjustDistance(-scale * this.camera.distance);
   }
 
   private handleWheel(deltaY: number, shift: boolean): void {
@@ -1398,9 +1432,9 @@ export class Game {
         this.damageEffects.splice(index, 1);
         continue;
       }
-      const point = this.camera.project(effect.position, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
-      effect.element.style.left = `${(point.x / VIEWPORT_WIDTH) * 100}%`;
-      effect.element.style.top = `${(point.y / VIEWPORT_HEIGHT) * 100 - age * 2}%`;
+      const point = this.camera.project(effect.position, this.viewportWidth, this.viewportHeight);
+      effect.element.style.left = `${(point.x / this.viewportWidth) * 100}%`;
+      effect.element.style.top = `${(point.y / this.viewportHeight) * 100 - age * 2}%`;
       effect.element.style.opacity = String(Math.max(0, 1 - age / DAMAGE_DURATION));
       effect.element.style.display = point.visible ? 'block' : 'none';
     }

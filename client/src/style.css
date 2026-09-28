@@ -32,9 +32,8 @@ body {
 
 #game-shell {
   position: relative;
-  width: min(100vw, calc(100vh * 4 / 3));
-  height: min(100vh, calc(100vw * 3 / 4));
-  aspect-ratio: 4 / 3;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: #6c9c70;
   border: 2px solid #80633b;
@@ -49,6 +48,8 @@ body {
   image-rendering: pixelated;
   cursor: crosshair;
   touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 #world-overlay,
@@ -60,6 +61,13 @@ body {
 
 #hud {
   z-index: 3;
+  /* Absolutely positioned HUD children resolve against the padding box, so this
+     keeps the readouts clear of the notch and the home indicator without
+     nudging each one individually. */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
 }
 
 .brand-panel,
@@ -404,6 +412,8 @@ body {
   box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
   pointer-events: auto;
   transition: opacity 250ms ease;
+  margin-right: env(safe-area-inset-right, 0px);
+  margin-bottom: calc(70px + env(safe-area-inset-bottom, 0px));
 }
 
 #help-card strong {
@@ -462,5 +472,85 @@ body {
   #map-label,
   #seed-label {
     transform-origin: top right;
+  }
+}
+
+/* Hidden by default so the touch variant never renders on a desktop. */
+.hint-touch {
+  display: none;
+}
+
+/* Narrow viewports cannot fit the brand, the HP bar, and the map label on one
+   row. The HP bar drops to its own line instead of overlapping them. */
+@media (max-width: 600px) {
+  .status-panel {
+    top: 52px;
+  }
+
+  #target-panel {
+    top: 98px;
+  }
+
+  .connection-panel {
+    top: 144px;
+  }
+}
+
+/* Touch devices: the hotbar is the only way to reach attack, heal, and
+   inventory, so it has to clear the 44px minimum target and stop advertising
+   keyboard shortcuts that do not exist without a keyboard. */
+@media (pointer: coarse) {
+  .hotbar-slot {
+    grid-template-columns: 30px 30px;
+    grid-template-rows: 30px 14px;
+    width: 76px;
+    height: 60px;
+  }
+
+  .slot-icon {
+    width: 28px;
+    height: 28px;
+    font-size: 23px;
+  }
+
+  .slot-label {
+    font-size: 9px;
+  }
+
+  .slot-key,
+  #seed-label,
+  .hint-desktop {
+    display: none;
+  }
+
+  .hint-touch {
+    display: inline;
+  }
+
+  /* Clear the taller hotbar so log lines are not hidden behind it. */
+  #message-log {
+    bottom: 92px;
+  }
+
+  /* And clear the message log itself. */
+  #help-card {
+    margin-bottom: calc(190px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .window {
+    width: min(300px, calc(100vw - 24px));
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .window-titlebar button,
+  .inventory-slot {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  #help-card button {
+    min-height: 44px;
+    padding: 6px 14px;
+    font-size: 11px;
   }
 }

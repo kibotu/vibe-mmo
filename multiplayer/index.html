@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#14261c" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <title>Payon Forest — Multiplayer</title>
@@ -71,16 +71,24 @@
           </header>
           <div class="inventory-caption">Materials and consumables</div>
           <div id="inventory-grid"></div>
-          <div class="inventory-footer">Click a floor item to pick it up.</div>
+          <div class="inventory-footer">Click or tap a floor item to pick it up.</div>
         </section>
 
         <aside id="help-card">
-          <strong>Left click</strong> move / attack &nbsp;·&nbsp;
-          <strong>Right drag</strong> rotate &nbsp;·&nbsp;
-          <strong>Shift + right drag</strong> tilt &nbsp;·&nbsp;
-          <strong>Control + right drag</strong> zoom &nbsp;·&nbsp;
-          <strong>Wheel</strong> zoom &nbsp;·&nbsp;
-          <strong>H</strong> eat Apple
+          <span class="hint-desktop">
+            <strong>Left click</strong> move / attack &nbsp;·&nbsp;
+            <strong>Right drag</strong> rotate &nbsp;·&nbsp;
+            <strong>Shift + right drag</strong> tilt &nbsp;·&nbsp;
+            <strong>Control + right drag</strong> zoom &nbsp;·&nbsp;
+            <strong>Wheel</strong> zoom &nbsp;·&nbsp;
+            <strong>H</strong> eat Apple
+          </span>
+          <span class="hint-touch">
+            <strong>Tap</strong> move / attack &nbsp;·&nbsp;
+            <strong>Drag</strong> rotate &nbsp;·&nbsp;
+            <strong>Pinch</strong> zoom &nbsp;·&nbsp;
+            <strong>Two-finger drag</strong> tilt
+          </span>
           <button id="help-dismiss" type="button">Got it</button>
         </aside>
       </section>

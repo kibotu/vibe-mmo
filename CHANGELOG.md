@@ -7,12 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Touch controls in `client/src/input.ts`. One finger drags to rotate, two fingers pinch
+  to zoom, and a two-finger vertical drag tilts. Taps and drags are separated by a 10px
+  slop threshold and a 400ms hold limit, so a shaky tap still moves and a long press to
+  look around does not issue a move command.
+- Device-appropriate control hints. The help card teaches touch gestures on coarse
+  pointers and mouse gestures elsewhere, from one markup tree.
+- `viewport-fit=cover` plus `env(safe-area-inset-*)` padding on the HUD, so the readouts
+  clear the notch and the home indicator without nudging each panel individually.
+
 ### Changed
 
 - GitHub Actions now build on pushes to `main` only. The `pull_request` trigger and
   the non-main push trigger were removed, so branches no longer run CI and a broken
   push reaches `main` unverified.
 - Release tags are named `0.1.0`, `0.2.0`, and `0.3.0` without a `v` prefix.
+- The canvas backing store now follows the measured element size via `ResizeObserver`,
+  with `devicePixelRatio` capped at 2, replacing a hardcoded 800x600 target rendered at
+  `setPixelRatio(1)`. The camera aspect, screen-space picking, and damage-number
+  projection all follow the live size. A HiDPI display is no longer upscaled from 1x.
+- The 4:3 letterbox is gone and `#game-shell` fills the viewport on every device. This
+  is a deliberate loss of the retro framing, and a large desktop window now rasterises
+  roughly ten times the pixels the fixed 800x600 target did; 120fps median was measured
+  at 5.0 megapixels, but that headroom is smaller on weaker GPUs.
+- Camera drag sensitivity is normalised against fixed 800x600 and 600x600 reference
+  dimensions instead of the live viewport, so a swipe covers the same angle on a phone
+  and a desktop. Desktop feel is unchanged.
+- Touch input runs on its own pointer path ahead of the mouse button checks, because
+  touch reports `button: 0` and was previously being claimed by the mouse path. Hover
+  raycasting is skipped for touch, which has no hover state to maintain.
+- The hotbar grows to 76x60 and the inventory window to a 44px minimum target on coarse
+  pointers, and the `F1`/`H`/`I` shortcut hints are hidden there.
+- The welcome message and the inventory footer now say "click or tap" rather than
+  "left-click", and the seed label is hidden on touch where it listed only key
+  shortcuts.
+
+### Fixed
+
+- The brand panel, HP panel, and map label overlapped one another below roughly 530px of
+  width. The HP panel now drops to its own line under 600px.
+- The help card overlapped the message log on coarse pointers.
 
 ## [0.3.0] - 2026-09-28
 

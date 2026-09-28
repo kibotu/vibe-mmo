@@ -176,6 +176,10 @@ backend/vendor/
 backend/secrets.yml
 backend/secrets-*.yml
 backend/secrets.*.yml
+# The Compose-only override holds no credentials, only the database host name,
+# and the Docker stack cannot boot without it. Tracked deliberately; every other
+# file matching the patterns above stays ignored.
+!backend/secrets.docker.yml
 backend/.env
 backend/.env.*
 backend/*.key

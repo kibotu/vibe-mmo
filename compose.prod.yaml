@@ -7,18 +7,46 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
+  # Produces the secrets file the application containers read. secrets.yml holds
+  # the shared configuration and is what deploy.sh uploads to the FTP host;
+  # secrets.docker.yml holds the few values that differ inside Compose, where
+  # MariaDB is reachable as the service name "db" rather than "localhost".
+  # Merging here keeps one source of truth instead of a hand-toggled file.
+  secrets-merge:
+    image: mmo-backend-prod:php
+    build:
+      context: ./backend
+    command:
+      - php
+      - /var/www/html/backend/docker/merge-secrets.php
+      - /var/www/html/shared/secrets.yml
+      - /var/www/html/shared/secrets.docker.yml
+      - /var/www/html/merged/secrets.yml
+    volumes:
+      - type: bind
+        source: ./backend
+        target: /var/www/html/shared
+        read_only: true
+        bind:
+          create_host_path: false
+      - merged-secrets:/var/www/html/merged
+    network_mode: none
+    logging: *default-logging
+    restart: "no"
+
   config:
     image: mmo-backend-prod:php
     build:
       context: ./backend
-    command: ["php", "/var/www/html/backend/docker/config-init.php"]
+    command: ["php", "/var/www/html/backend/docker/config-init.php", "/var/www/html/merged/secrets.yml"]
+    depends_on:
+      secrets-merge:
+        condition: service_completed_successfully
     volumes:
-      - type: bind
-        source: ./backend/secrets.yml
-        target: /var/www/html/backend/secrets.yml
+      - type: volume
+        source: merged-secrets
+        target: /var/www/html/merged
         read_only: true
-        bind:
-          create_host_path: false
       - config-data:/run/mmo-config
     network_mode: none
     logging: *default-logging
@@ -62,14 +90,19 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      secrets-merge:
+        condition: service_completed_successfully
     volumes:
-      - type: bind
-        source: ./backend/secrets.yml
-        target: /var/www/html/backend/secrets.yml
+      - type: volume
+        source: merged-secrets
+        target: /var/www/html/merged
         read_only: true
-        bind:
-          create_host_path: false
       - runtime-data:/var/www/html/backend/runtime
+    environment:
+      # BackendPaths::root() resolves to the backend directory, so the
+      # application would read backend/secrets.yml. Inside the container that
+      # path is not mounted; the merged copy is provided here instead.
+      MMO_SECRETS_FILE: /var/www/html/merged/secrets.yml
     expose:
       - "9000"
       - "8080"
@@ -117,6 +150,7 @@ volumes:
   config-data:
   database-data:
   runtime-data:
+  merged-secrets:
 
 networks:
   edge:

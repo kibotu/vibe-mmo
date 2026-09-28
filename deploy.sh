@@ -25,6 +25,7 @@ ALLOW_INSECURE_TLS=0
 ALLOW_INSECURE_FILE_MODE=0
 NO_DELETE=0
 REMOTE_PATH_OVERRIDE=""
+UPLOAD_SECRETS=0
 
 STAGING_DIR=""
 LFTP_SCRIPT=""
@@ -67,9 +68,16 @@ Options:
   --allow-insecure-tls    Explicitly disable remote TLS certificate checks.
                           Never use this for production without a reason.
   --allow-insecure-file-mode
-                          Permit a group/world-readable secrets.yml.
+                          Deploy without tightening the secrets file. Normally
+                          a group/world-readable secrets.yml is chmod'ed to 0600
+                          automatically.
   --secrets PATH          Use PATH instead of backend/secrets.yml.
   --remote-path PATH      Override ftp.remote_path for this run.
+  --upload-secrets        Also upload secrets.yml to the FTP root. Off by
+                          default so a deploy can never overwrite production
+                          credentials. Safe here only because ftp.public_path
+                          is the document root and secrets.yml sits above it;
+                          the script verifies that before uploading.
   -h, --help              Show this help.
 
 Environment:
@@ -101,6 +109,7 @@ while [[ $# -gt 0 ]]; do
     --allow-dirty) ALLOW_DIRTY=1; shift ;;
     --allow-insecure-tls) ALLOW_INSECURE_TLS=1; shift ;;
     --allow-insecure-file-mode) ALLOW_INSECURE_FILE_MODE=1; shift ;;
+    --upload-secrets) UPLOAD_SECRETS=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; die "Unknown option: $1" ;;
   esac
@@ -136,6 +145,10 @@ if [[ "$ALLOW_DIRTY" -eq 0 && -n "$(git -C "$REPO_ROOT" status --porcelain --unt
   die "Git worktree is dirty. Commit changes or pass --allow-dirty for an intentional test deployment."
 fi
 
+# Tighten the secrets file rather than refusing to run. A checkout on a fresh
+# machine routinely lands at 0644, and making the operator chmod by hand before
+# every deploy is a papercut, not a safeguard. Permissions are only ever reduced,
+# never widened, so this cannot make a file less private than it already was.
 if [[ "$DRY_RUN" -eq 0 && "$ALLOW_INSECURE_FILE_MODE" -eq 0 ]]; then
   if stat -f '%Lp' "$SECRETS_FILE" >/dev/null 2>&1; then
     SECRET_MODE="$(stat -f '%Lp' "$SECRETS_FILE")"
@@ -143,7 +156,10 @@ if [[ "$DRY_RUN" -eq 0 && "$ALLOW_INSECURE_FILE_MODE" -eq 0 ]]; then
     SECRET_MODE="$(stat -c '%a' "$SECRETS_FILE")"
   fi
   if (( (8#$SECRET_MODE & 077) != 0 )); then
-    die "Secrets file is readable by group/other (mode $SECRET_MODE). Use chmod 0600 or 0640, or pass --allow-insecure-file-mode."
+    if ! chmod 600 "$SECRETS_FILE" 2>/dev/null; then
+      die "Secrets file is group/other-readable (mode $SECRET_MODE) and could not be tightened to 0600. Fix its ownership, or pass --allow-insecure-file-mode."
+    fi
+    ok "Tightened $SECRETS_FILE from $SECRET_MODE to 600"
   fi
 fi
 
@@ -164,17 +180,35 @@ cleanup() {
 trap 'rc=$?; cleanup || true; exit "$rc"' EXIT
 trap 'exit 130' INT TERM
 
-# Install production dependencies into the staging tree instead of the working
-# copy, so a deploy never strips a developer's dev packages from backend/vendor.
-log "Installing backend dependencies from the committed lock file into staging"
+# Install production dependencies into a cache keyed by the lock file rather
+# than into the working copy, so a deploy never strips a developer's dev packages
+# from backend/vendor.
+#
+# The cache is also what keeps vendor/ stable across deploys. Composer stamps
+# freshly extracted files with the current time, so installing into a throwaway
+# directory makes every dependency look newer than its remote copy and lftp
+# re-uploads all ~800 of them every run. Reusing one directory per lock file
+# keeps those timestamps stable, and the vendor tree is only re-uploaded when the
+# lock file itself actually changes.
+VENDOR_CACHE_ROOT="${MMO_VENDOR_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/mmo-deploy}"
+VENDOR_CACHE_DIR="$VENDOR_CACHE_ROOT/vendor-$(php -r 'echo substr(hash("sha256", file_get_contents($argv[1])), 0, 16);' "$BACKEND_DIR/composer.lock")"
+
+if [[ -f "$VENDOR_CACHE_DIR/vendor/autoload.php" ]]; then
+  log "Reusing cached backend dependencies for this lock file"
+else
+  log "Installing backend dependencies from the committed lock file"
+  rm -rf "$VENDOR_CACHE_DIR"
+  mkdir -p "$VENDOR_CACHE_DIR"
+  cp "$BACKEND_DIR/composer.json" "$BACKEND_DIR/composer.lock" "$VENDOR_CACHE_DIR/"
+  cp -R "$BACKEND_DIR/src" "$VENDOR_CACHE_DIR/src"
+  (
+    cd "$VENDOR_CACHE_DIR"
+    composer install --no-dev --classmap-authoritative --no-interaction --prefer-dist
+    composer check-platform-reqs --no-dev >/dev/null
+  )
+fi
 mkdir -p "$STAGING_DIR/composer"
-cp "$BACKEND_DIR/composer.json" "$BACKEND_DIR/composer.lock" "$STAGING_DIR/composer/"
-cp -R "$BACKEND_DIR/src" "$STAGING_DIR/composer/src"
-(
-  cd "$STAGING_DIR/composer"
-  composer install --no-dev --classmap-authoritative --no-interaction --prefer-dist
-  composer check-platform-reqs --no-dev >/dev/null
-)
+cp -Rp "$VENDOR_CACHE_DIR/." "$STAGING_DIR/composer/"
 
 yaml_get() {
   php -r '
@@ -218,6 +252,15 @@ if [[ "$MODE" == "ftp" ]]; then
   FTP_PUBLIC_PATH="${FTP_PUBLIC_PATH%/}"
   [[ "$FTP_PUBLIC_PATH" != "." && -n "$FTP_PUBLIC_PATH" ]] || die "ftp.public_path must name a directory"
 
+  # secrets.yml is only safe to upload while it lands above the document root.
+  # If public_path were empty, the FTP root would be the docroot and the file
+  # would be downloadable. Refuse rather than trust the configuration.
+  if [[ "$UPLOAD_SECRETS" -eq 1 ]]; then
+    if [[ -z "$FTP_PUBLIC_PATH" || "$FTP_REMOTE_PATH" == "$FTP_PUBLIC_PATH" ]]; then
+      die "--upload-secrets requires ftp.public_path to be a directory inside ftp.remote_path, so secrets.yml is written above the document root. Refusing to upload credentials into a web-served directory."
+    fi
+  fi
+
   case "$FTP_HOST" in
     *example.com*|*change-this*|*your-*) die "ftp.host still contains an example value" ;;
   esac
@@ -225,6 +268,26 @@ if [[ "$MODE" == "ftp" ]]; then
     *change-this*|*your-*|*example*) die "FTP credentials still contain example values" ;;
   esac
   [[ "$FTP_TLS" == "true" ]] || die "ftp.tls must be true; use --allow-insecure-tls only for certificate diagnostics, not to disable TLS"
+
+  # The migration endpoint is uploaded over FTP and then requested over HTTP.
+  # That HTTP request must go to the FTP host, not to app.public_url, which
+  # describes the application and is typically a local Docker port. Requesting
+  # the local address fetches this machine instead of the server, so the endpoint
+  # is never found. ftp.public_url is the public web address of the FTP root.
+  DEPLOY_BASE_URL="$(yaml_get ftp.public_url || true)"
+  if [[ -z "$DEPLOY_BASE_URL" ]]; then
+    DEPLOY_BASE_URL="$(yaml_get ftp.deploy_url || true)"
+  fi
+  if [[ -z "$DEPLOY_BASE_URL" ]]; then
+    die "Missing ftp.public_url in $SECRETS_FILE. It must be the public HTTP(S) address of the FTP root, for example https://example.com, so migrations can be requested on the server rather than on this machine."
+  fi
+  DEPLOY_BASE_URL="${DEPLOY_BASE_URL%/}"
+  [[ "$DEPLOY_BASE_URL" =~ ^https?://[^[:space:]]+$ ]] || die "ftp.public_url must be an absolute HTTP(S) URL"
+  case "$DEPLOY_BASE_URL" in
+    http://127.0.0.1*|http://localhost*|http://0.0.0.0*|http://\[::1\]*)
+      die "ftp.public_url points at a loopback address ($DEPLOY_BASE_URL). Migrations are requested over HTTP on the server; this address would query your own machine and always 404. Use the FTP host's public address."
+      ;;
+  esac
 fi
 
 LFTP_SCRIPT="$STAGING_DIR/upload.lftp"
@@ -244,19 +307,31 @@ build_multiplayer() {
 stage_backend() {
   log "Staging private backend and public multiplayer client"
   mkdir -p "$STAGING_DIR/release"/{bin,database,src,public,vendor}
-  cp -R "$BACKEND_DIR/bin/." "$STAGING_DIR/release/bin/"
-  cp -R "$BACKEND_DIR/database/." "$STAGING_DIR/release/database/"
-  cp -R "$BACKEND_DIR/src/." "$STAGING_DIR/release/src/"
-  cp -R "$BACKEND_DIR/public/." "$STAGING_DIR/release/public/"
+  # -p preserves mtimes. Mirror compares them to decide what to transfer, so
+  # without this every staged file looks newly modified and the entire tree is
+  # re-uploaded each run.
+  cp -Rp "$BACKEND_DIR/bin/." "$STAGING_DIR/release/bin/"
+  cp -Rp "$BACKEND_DIR/database/." "$STAGING_DIR/release/database/"
+  cp -Rp "$BACKEND_DIR/src/." "$STAGING_DIR/release/src/"
+  cp -Rp "$BACKEND_DIR/public/." "$STAGING_DIR/release/public/"
   rm -rf "$STAGING_DIR/release/public/game"
   mkdir -p "$STAGING_DIR/release/public/game"
-  cp -R "$REPO_ROOT/multiplayer/dist/." "$STAGING_DIR/release/public/game/"
-  cp -R "$STAGING_DIR/composer/vendor/." "$STAGING_DIR/release/vendor/"
+  cp -Rp "$REPO_ROOT/multiplayer/dist/." "$STAGING_DIR/release/public/game/"
+  cp -Rp "$STAGING_DIR/composer/vendor/." "$STAGING_DIR/release/vendor/"
   cp "$STAGING_DIR/composer/composer.json" "$STAGING_DIR/composer/composer.lock" "$STAGING_DIR/release/"
 
   # Never place secrets, runtime state, tests, Docker files, or development
   # metadata in the upload tree.
   find "$STAGING_DIR/release" -name '.DS_Store' -delete
+
+  # secrets.yml is excluded by name in the mirror globs, so it is placed here
+  # only when explicitly requested. It goes to the FTP root, above public/.
+  if [[ "$UPLOAD_SECRETS" -eq 1 ]]; then
+    cp -p "$SECRETS_FILE" "$STAGING_DIR/release/secrets.yml"
+    chmod 600 "$STAGING_DIR/release/secrets.yml"
+    warn "Uploading $SECRETS_FILE to $FTP_HOST$FTP_REMOTE_PATH/secrets.yml. It must stay above $FTP_PUBLIC_PATH to remain unreachable over HTTP."
+  fi
+
   ok "Staged $(find "$STAGING_DIR/release" -type f | wc -l | tr -d ' ') files"
 }
 
@@ -270,20 +345,24 @@ write_lftp_upload_script() {
   local delete_args=""
   [[ "$NO_DELETE" -eq 0 ]] && delete_args="--delete"
 
+  # Sibling secret files are always excluded so a per-developer or backup copy
+  # can never be published by accident. Note that 'secrets*.yml' would also match
+  # secrets.yml itself, so the exact name is excluded by default and dropped only
+  # on explicit request.
+  local secret_excludes="--exclude-glob 'secrets.*.yml' --exclude-glob 'secrets-*.yml'"
+  [[ "$UPLOAD_SECRETS" -eq 1 ]] || secret_excludes="--exclude-glob 'secrets.yml' $secret_excludes"
+
   cat > "$LFTP_SCRIPT" <<EOF
 set ftp:ssl-allow yes
 set ftp:ssl-force yes
 set ftp:ssl-protect-data yes
 set ssl:verify-certificate $verify
 set xfer:clobber yes
-set xfer:binary yes
 open -u "$(lftp_quote "$FTP_USER")","$(lftp_quote "$FTP_PASSWORD")" "$(lftp_quote "$FTP_HOST")"
 cd "$(lftp_quote "$FTP_REMOTE_PATH")"
 lcd "$(lftp_quote "$STAGING_DIR/release")"
 mirror --reverse $delete_args --verbose \\
-  --exclude-glob 'secrets.yml' \\
-  --exclude-glob 'secrets*.yml' \\
-  --exclude-glob 'secrets.*.yml' \\
+  $secret_excludes \\
   --exclude-glob 'runtime' \\
   --exclude-glob 'runtime/*' \\
   --exclude-glob '*.key' \\
@@ -341,7 +420,14 @@ upload_migration_runner() {
   local token token_hash runner_file
   token="$(php -r 'echo bin2hex(random_bytes(32));')"
   token_hash="$(php -r 'echo hash("sha256", $argv[1]);' "$token")"
-  MIGRATION_NAME="deploy-migrate-$(date +%s)-$RANDOM.php"
+
+  # The endpoint has to live in the document root for the web server to execute
+  # it, so its filename is the only thing keeping a stranger from reaching the
+  # migrator. A name built from date and $RANDOM is guessable: the epoch is
+  # knowable and $RANDOM is 15 bits. Deriving the name from 256 bits of the
+  # token instead means the URL itself is the secret, and the token header
+  # remains a second, independent check.
+  MIGRATION_NAME="deploy-migrate-$(php -r 'echo substr(hash("sha256", random_bytes(32)), 0, 32);').php"
   runner_file="$STAGING_DIR/$MIGRATION_NAME"
   cat > "$runner_file" <<EOF
 <?php
@@ -366,6 +452,19 @@ try {
 } catch (Throwable \$exception) {
     http_response_code(500);
     echo "MMO_DEPLOY_MIGRATIONS_FAILED\n";
+    // Returned to the token holder so a failed deploy is diagnosable without
+    // shell access to the server's PHP error log. Credentials are masked, so
+    // this cannot disclose the database password.
+    \$message = \$exception->getMessage();
+    \$password = '';
+    try {
+        \$password = (string) Mmo\\Config\\Config::fromFile(dirname(__DIR__) . '/secrets.yml')->string('database.password');
+    } catch (Throwable) {
+    }
+    if (\$password !== '') {
+        \$message = str_replace(\$password, '***', \$message);
+    }
+    echo get_class(\$exception) . ': ' . \$message . "\n";
     error_log(\$exception->getMessage());
     exit(1);
 }
@@ -390,12 +489,18 @@ EOF
   MIGRATION_UPLOADED=1
   write_migration_cleanup_script
 
-  log "Running protected, idempotent database migrations"
+  log "Running protected, idempotent database migrations on $DEPLOY_BASE_URL"
   local response
   if ! response="$(curl --silent --show-error --fail-with-body --connect-timeout 10 --max-time 180 \
-    -H "X-Deploy-Token: $token" "$APP_BASE_URL/$MIGRATION_NAME")"; then
+    -H "X-Deploy-Token: $token" "$DEPLOY_BASE_URL/$MIGRATION_NAME")"; then
+    if grep -q 'MMO_DEPLOY_MIGRATIONS_FAILED' <<<"$response"; then
+      # The endpoint ran and the migrator threw, so report its reason rather than
+      # a generic transport failure.
+      printf '%s\n' "$response" >&2
+      die "Migrations failed on the server. The endpoint was uploaded to $FTP_HOST$FTP_REMOTE_PATH/$FTP_PUBLIC_PATH/$MIGRATION_NAME and reached successfully; the exception above came from the server."
+    fi
     printf '%s\n' "$response" >&2 || true
-    die "Migration endpoint failed"
+    die "Migration endpoint could not be reached. It was uploaded to $FTP_HOST$FTP_REMOTE_PATH/$FTP_PUBLIC_PATH/$MIGRATION_NAME but requesting $DEPLOY_BASE_URL/$MIGRATION_NAME did not succeed. A 404 means the web server is not serving the FTP root, or ftp.remote_path/public_path does not match the document root. MMO_DEPLOY_MIGRATIONS_DENIED means the request reached a different or stale copy of the endpoint."
   fi
   printf '%s\n' "$response"
   grep -q 'MMO_DEPLOY_MIGRATIONS_OK' <<<"$response" || die "Migration endpoint did not report success"
@@ -423,7 +528,7 @@ stage_backend
 if [[ "$DRY_RUN" -eq 1 ]]; then
   log "Dry run: would sync $(find "$STAGING_DIR/release" -type f | wc -l | tr -d ' ') files to $FTP_HOST:$FTP_PORT$FTP_REMOTE_PATH"
   if [[ "$SKIP_MIGRATIONS" -eq 0 ]]; then
-    printf 'Would run protected migrations at %s/<temporary endpoint>\n' "$APP_BASE_URL"
+    printf 'Would run protected migrations at %s/<temporary endpoint>\n' "$DEPLOY_BASE_URL"
   fi
   exit 0
 fi
@@ -441,5 +546,6 @@ else
 fi
 
 ok "Deployment completed"
-printf '  Public URL: %s\n' "$APP_BASE_URL"
-printf '  Git commit: %s\n' "$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
+printf '  Application URL: %s\n' "$APP_BASE_URL"
+printf '  Deploy URL:      %s\n' "$DEPLOY_BASE_URL"
+printf '  Git commit:      %s\n' "$(git -C "$REPO_ROOT" rev-parse --short HEAD)"

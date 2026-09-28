@@ -7,7 +7,11 @@ use Symfony\Component\Yaml\Yaml;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
-$config = Config::fromFile(dirname(__DIR__) . '/secrets.yml');
+// The container reads the merged configuration written by merge-secrets.php,
+// which applies the Compose-only overrides. The path is an argument so this
+// script stays usable against the plain file during local debugging.
+$configurationPath = $argv[1] ?? (dirname(__DIR__) . '/secrets.yml');
+$config = Config::fromFile($configurationPath);
 $output = '/run/mmo-config';
 $values = [
     'root_password' => $config->string('database.root_password'),

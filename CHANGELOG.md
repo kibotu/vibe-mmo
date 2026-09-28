@@ -49,6 +49,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The brand panel, HP panel, and map label overlapped one another below roughly 530px of
   width. The HP panel now drops to its own line under 600px.
 - The help card overlapped the message log on coarse pointers.
+- Placing two fingers and lifting them without moving issued two move commands. Any
+  second finger now marks every tracked pointer as dragged, so a multi-finger gesture
+  is never a tap.
+
+### Testing
+
+- `client/src/input.test.ts` covers the touch and mouse gesture rules directly, using a
+  fake canvas and a mocked clock rather than a DOM implementation. jsdom does not
+  implement `PointerEvent`, so the events are plain objects carrying only the fields
+  the controller reads, which keeps the suite dependency-free and deterministic.
 
 ## [0.3.0] - 2026-09-28
 

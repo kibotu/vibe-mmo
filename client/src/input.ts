@@ -82,10 +82,13 @@ export class InputController {
         startedAt: performance.now(),
       });
       this.canvas.setPointerCapture(event.pointerId);
-      if (this.touches.size === 2) {
+      if (this.touches.size >= 2) {
         const { span, midY } = this.pinchGeometry();
         this.pinchSpan = span;
         this.pinchMidY = midY;
+        // A second finger makes this a camera gesture, never a tap, even if both
+        // fingers are lifted again without ever having moved.
+        for (const touch of this.touches.values()) touch.moved = true;
       }
       return;
     }
@@ -131,8 +134,6 @@ export class InputController {
         if (this.pinchSpan > 0) this.callbacks.onCameraDrag(0, this.pinchMidY - midY, true, false);
         this.pinchSpan = span;
         this.pinchMidY = midY;
-        // A pinch is never a tap, whichever finger is lifted first.
-        for (const touch of this.touches.values()) touch.moved = true;
         return;
       }
 

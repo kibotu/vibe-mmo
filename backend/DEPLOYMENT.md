@@ -117,7 +117,7 @@ Before starting a new production database:
 
 ### Table prefix
 
-Every table this application owns is prefixed with `database.prefix`, which defaults to the required value `mmo_`:
+Every table this application owns is prefixed with the required `database.prefix` setting, set to `mmo_`:
 
 ```text
 mmo_rooms
@@ -132,16 +132,7 @@ Index and constraint names carry the same prefix, because MySQL requires foreign
 
 Migration files are written as templates containing a `{prefix}` token. The migration checksum is computed over the template, not the rendered SQL, so changing the prefix later never invalidates an already applied migration. The token is substituted at execution time.
 
-> **Existing databases.** Prefixed tables were introduced before the first production deployment, so no production data required a rename. A database that already carries *unprefixed* `rooms`, `players`, or `player_sessions` tables must be renamed before the new code runs, otherwise the application will not find its tables. The rename is a deliberate, one-time operation:
-
-> ```sql
-> RENAME TABLE rooms TO mmo_rooms,
->              players TO mmo_players,
->              player_sessions TO mmo_player_sessions,
->              schema_migrations TO mmo_schema_migrations;
-> ```
-
-> The foreign-key constraint and index names inside those tables keep their old names, which is harmless; they may be renamed afterwards for tidiness.
+The prefix is in place from the very first migration, so a new database is created prefixed and no unprefixed schema is ever produced. `001_initial.sql` is therefore the complete baseline for a new deployment.
 
 The PHP container runs `php bin/migrate.php` before Supervisor starts. Do not expose a public migration endpoint.
 

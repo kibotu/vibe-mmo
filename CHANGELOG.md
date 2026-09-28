@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- GitHub Actions now build on pushes to `main` only. The `pull_request` trigger and
+  the non-main push trigger were removed, so branches no longer run CI and a broken
+  push reaches `main` unverified.
+- Release tags are named `0.1.0`, `0.2.0`, and `0.3.0` without a `v` prefix.
+
 ## [0.3.0] - 2026-09-28
 
 ### Added
@@ -78,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with movement, targeting, combat, loot, inventory, and camera controls.
 - GitHub Actions pipeline publishing the static client to GitHub Pages.
 
-[Unreleased]: https://github.com/kibotu/vibe-mmo/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/kibotu/vibe-mmo/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/kibotu/vibe-mmo/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/kibotu/vibe-mmo/compare/5e0c524...v0.1.0
+[Unreleased]: https://github.com/kibotu/vibe-mmo/compare/0.3.0...HEAD
+[0.3.0]: https://github.com/kibotu/vibe-mmo/compare/0.2.0...0.3.0
+[0.2.0]: https://github.com/kibotu/vibe-mmo/compare/0.1.0...0.2.0
+[0.1.0]: https://github.com/kibotu/vibe-mmo/compare/5e0c524...0.1.0

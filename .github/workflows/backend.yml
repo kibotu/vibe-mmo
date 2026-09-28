@@ -5,23 +5,8 @@ permissions:
 
 on:
   push:
-    paths:
-      - "backend/**"
-      - "client/**"
-      - "singleplayer/**"
-      - "multiplayer/**"
-      - "scripts/**"
-      - "tsconfig.json"
-      - "compose.yaml"
-      - "compose.prod.yaml"
-      - ".dockerignore"
-      - "package.json"
-      - "package-lock.json"
-      - "client/vite.config.shared.ts"
-      - "singleplayer/vite.config.ts"
-      - "multiplayer/vite.config.ts"
-      - ".github/workflows/backend.yml"
-  pull_request:
+    branches:
+      - main
     paths:
       - "backend/**"
       - "client/**"

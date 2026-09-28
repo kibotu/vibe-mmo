@@ -99,13 +99,15 @@ services:
     environment:
       BASE_PATH: /game/
     volumes:
-      - ./index.html:/app/index.html:ro
-      - ./public:/app/public:ro
-      - ./src:/app/src:ro
+      - ./multiplayer/index.html:/app/multiplayer/index.html:ro
+      - ./multiplayer/src:/app/multiplayer/src:ro
+      - ./multiplayer/vite.config.ts:/app/multiplayer/vite.config.ts:ro
+      - ./client/src:/app/client/src:ro
+      - ./client/public:/app/client/public:ro
+      - ./client/vite.config.shared.ts:/app/client/vite.config.shared.ts:ro
       - ./package.json:/app/package.json:ro
       - ./package-lock.json:/app/package-lock.json:ro
       - ./tsconfig.json:/app/tsconfig.json:ro
-      - ./vite.config.ts:/app/vite.config.ts:ro
     expose:
       - "5174"
     healthcheck:

@@ -1,4 +1,4 @@
-name: CI and GitHub Pages
+name: Singleplayer GitHub Pages
 
 on:
   push:
@@ -36,8 +36,8 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Build game
-        run: npm run build
+      - name: Build singleplayer client
+        run: npm run build:singleplayer
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
@@ -45,7 +45,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: singleplayer/dist
 
   deploy:
     name: Deploy to GitHub Pages

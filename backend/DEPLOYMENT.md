@@ -28,7 +28,7 @@ docker compose -f compose.prod.yaml up -d --build
 docker compose -f compose.prod.yaml ps
 ```
 
-The production web image builds the Vite frontend during `docker build`; no `vendor/` directory or `.env` file needs to be uploaded through FTP. Composer dependencies are installed while the PHP image is built. The web container binds to loopback port `18081`; put the VPS's TLS reverse proxy in front of it, or change that published port deliberately.
+The production web image builds the multiplayer client during `docker build`; no `vendor/` directory or `.env` file needs to be uploaded through FTP. Composer dependencies are installed while the PHP image is built. The web container binds to loopback port `18081`; put the VPS's TLS reverse proxy in front of it, or change that published port deliberately.
 
 The only public document root in the PHP container is `backend/public/`. `secrets.yml`, `src/`, `bin/`, `database/`, Composer files, and runtime state remain outside the web root.
 
@@ -82,6 +82,25 @@ composer install --no-dev --classmap-authoritative
 Upload the resulting private-root `vendor/`, `src/`, `bin/`, `database/`, and `public/` directories. This can serve lobby/admin pages, but it will not provide WebSocket multiplayer without a separate always-on runtime. A one-request FPM script, cron tick, or long-lived HTTP request is not an acceptable substitute for the daemon.
 
 Use FTPS with certificate verification. Do not copy Trail's old deployment script unchanged: it disabled TLS verification, used destructive mirror mode, and briefly exposed an unauthenticated migration endpoint.
+
+## Repeatable deployment script
+
+The repository root `deploy.sh` is the supported sync tool for this repository:
+
+```bash
+./deploy.sh --dry-run --allow-dirty
+./deploy.sh
+```
+
+It reads only this repository's `backend/secrets.yml`. It builds and tests the multiplayer client, stages private backend files plus the public client, mirrors stale files while preserving remote `secrets.yml` and `runtime/`, and runs a short-lived migration endpoint protected by a random request token. The migration endpoint is removed in a cleanup trap, and the backend's checksummed migration table makes reruns idempotent.
+
+The FTP path is for PHP pages and the static multiplayer client. It is not a replacement for the persistent WebSocket daemon. For the Docker VPS path, use:
+
+```bash
+./deploy.sh --mode docker
+```
+
+Review [the root README](../README.md) for all options and secret-handling rules.
 
 ## Configuration and migrations
 

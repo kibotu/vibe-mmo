@@ -11,5 +11,5 @@
     "resolveJsonModule": true,
     "types": ["vite/client"]
   },
-  "include": ["src"]
+  "include": ["client/src", "singleplayer/src", "multiplayer/src"]
 }

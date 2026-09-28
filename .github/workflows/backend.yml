@@ -7,8 +7,9 @@ on:
   push:
     paths:
       - "backend/**"
-      - "src/**"
-      - "index.html"
+      - "client/**"
+      - "singleplayer/**"
+      - "multiplayer/**"
       - "scripts/**"
       - "tsconfig.json"
       - "compose.yaml"
@@ -16,13 +17,16 @@ on:
       - ".dockerignore"
       - "package.json"
       - "package-lock.json"
-      - "vite.config.ts"
+      - "client/vite.config.shared.ts"
+      - "singleplayer/vite.config.ts"
+      - "multiplayer/vite.config.ts"
       - ".github/workflows/backend.yml"
   pull_request:
     paths:
       - "backend/**"
-      - "src/**"
-      - "index.html"
+      - "client/**"
+      - "singleplayer/**"
+      - "multiplayer/**"
       - "scripts/**"
       - "tsconfig.json"
       - "compose.yaml"
@@ -30,7 +34,9 @@ on:
       - ".dockerignore"
       - "package.json"
       - "package-lock.json"
-      - "vite.config.ts"
+      - "client/vite.config.shared.ts"
+      - "singleplayer/vite.config.ts"
+      - "multiplayer/vite.config.ts"
       - ".github/workflows/backend.yml"
 
 jobs:
@@ -81,4 +87,5 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - run: npm run build
+      - run: npm run build:singleplayer
+      - run: npm run build:multiplayer

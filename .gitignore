@@ -169,6 +169,9 @@ $RECYCLE.BIN/
 
 ### MMO backend ###
 node_modules/
+dist/
+singleplayer/dist/
+multiplayer/dist/
 backend/vendor/
 backend/secrets.yml
 backend/secrets-*.yml

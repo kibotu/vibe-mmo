@@ -4,10 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "build:backend": "BASE_PATH=/game/ tsc --noEmit && BASE_PATH=/game/ vite build",
-    "preview": "vite preview",
+    "dev": "vite --config singleplayer/vite.config.ts",
+    "dev:multiplayer": "vite --config multiplayer/vite.config.ts",
+    "build": "npm run build:singleplayer",
+    "build:singleplayer": "tsc --noEmit && vite build --config singleplayer/vite.config.ts",
+    "build:multiplayer": "BASE_PATH=/game/ tsc --noEmit && BASE_PATH=/game/ vite build --config multiplayer/vite.config.ts",
+    "build:backend": "npm run build:multiplayer",
+    "preview": "vite preview --config singleplayer/vite.config.ts",
+    "preview:multiplayer": "vite preview --config multiplayer/vite.config.ts",
     "test": "vitest run",
     "smoke": "node scripts/smoke.mjs",
     "typecheck": "tsc --noEmit"

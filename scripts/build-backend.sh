@@ -4,9 +4,9 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-npm run build:backend
+npm run build:multiplayer
 rm -rf backend/public/game
 mkdir -p backend/public/game
-cp -R dist/. backend/public/game/
+cp -R multiplayer/dist/. backend/public/game/
 
-printf 'Built frontend copied to backend/public/game/\n'
+printf 'Built multiplayer client copied to backend/public/game/\n'

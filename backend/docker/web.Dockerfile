@@ -7,12 +7,12 @@ RUN npm ci
 
 COPY . .
 ENV BASE_PATH=/game/
-RUN npm run build:backend
+RUN npm run build:multiplayer
 
 FROM nginx:1.28-alpine
 
 COPY backend/docker/nginx/production-container.conf /etc/nginx/conf.d/default.conf
 COPY backend/public/ /var/www/html/backend/public/
-COPY --from=frontend /app/dist/ /var/www/html/backend/public/game/
+COPY --from=frontend /app/multiplayer/dist/ /var/www/html/backend/public/game/
 
 EXPOSE 8080

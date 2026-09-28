@@ -181,64 +181,45 @@ test:e2e  run browser interaction tests
 typecheck run tsc with no emit
 ```
 
-Suggested source layout:
+Current client layout:
 
 ```text
-src/
-  main.ts
-  game/
-    Game.ts
-    GameLoop.ts
-    GameState.ts
-    Random.ts
-  camera/
-    ROCamera.ts
-    CameraProfile.ts
-  input/
-    InputController.ts
-    PointerPicker.ts
-  world/
-    WorldGrid.ts
-    Terrain.ts
-    PayonBiome.ts
-    PropRenderer.ts
-  actors/
-    Actor.ts
-    ActorManager.ts
-    SpriteActor.ts
-    SpriteAnimation.ts
-  movement/
-    GridPathfinder.ts
-    MovementSystem.ts
-  combat/
-    CombatSystem.ts
-    Damage.ts
-  items/
-    Inventory.ts
-    LootSystem.ts
-    FloorItem.ts
-  ui/
-    Hud.ts
-    InventoryWindow.ts
-    MessageLog.ts
-  data/
-    actors.ts
-    items.ts
+client/
+  src/
+    bootstrap.ts       shared offline/multiplayer boot logic
+    game.ts            shared renderer and game controller
+    camera.ts
+    combat.ts
+    direction.ts
+    input.ts
+    interpolation.ts
+    inventory.ts
     loot.ts
-  styles.css
-
-public/
-  assets/
-    sprites/
-    textures/
-    icons/
+    multiplayer.ts
+    pathfinding.ts
+    random.ts
+    sprites.ts
+    style.css
+    types.ts
+    world.ts
+    *.test.ts
+singleplayer/
+  index.html
+  src/main.ts
+  vite.config.ts
+multiplayer/
+  index.html
+  src/main.ts
+  vite.config.ts
+client/public/
+  favicon.svg
 ```
 
 This is a starting layout, not a mandate to create every file before the tracer bullet works. Keep files cohesive and delete unused scaffolding rather than building an abstract engine around one map.
 
 ### 5.1 Multiplayer authority
 
-The static build keeps its local simulation. When entered from `lobby.php`, the browser runs in network mode and sends sequenced intents over WebSocket. A single PHP daemon owns each room's active world and advances it on a fixed 20 Hz tick. It sends authoritative snapshots at 10 Hz.
+The singleplayer entrypoint keeps its local simulation and never opens a socket. The separate multiplayer entrypoint, entered from `lobby.php` at `/game/`, boots a room session and sends sequenced intents over WebSocket. A single PHP daemon owns each room's active world and advances it on a fixed 20 Hz tick. It sends authoritative snapshots at 10 Hz.
 
 The browser predicts its own cell movement and reconciles unacknowledged intents from `lastProcessedInput`. Remote actors are rendered from a delayed snapshot buffer to absorb network jitter. MySQL stores durable state on a slower persistence interval and is not queried during movement or combat.
 

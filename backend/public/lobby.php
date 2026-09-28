@@ -14,12 +14,12 @@ $identity = null;
 $csrf = '';
 $error = null;
 $submittedName = '';
-$gameUrl = '/game/?server=1';
+$gameUrl = '/game/';
 
 try {
     $application = Application::boot();
     $appName = $application->config->string('app.name', 'Payon Forest');
-    $gameUrl = $application->config->string('app.game_url', '/game/?server=1');
+    $gameUrl = $application->config->string('app.game_url', '/game/');
     $csrf = $application->csrf->issue();
     $rooms = $application->rooms->publicRooms();
     $identity = $application->guests->authenticate($application->cookies->guestCredentials($_COOKIE));

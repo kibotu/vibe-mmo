@@ -11,6 +11,8 @@ backend/*.p12
 backend/runtime
 backend/public/game
 dist
+singleplayer/dist
+multiplayer/dist
 docs
 node_modules
 .env

@@ -22,7 +22,14 @@ final class SecurityTest extends TestCase
     public function testCsrfTokensAreSignedAndTimeBound(): void
     {
         $config = Config::fromArray([
-            'database' => ['host' => 'db', 'port' => 3306, 'name' => 'mmo', 'username' => 'mmo', 'password' => 'db-secret'],
+            'database' => [
+                'host' => 'db',
+                'port' => 3306,
+                'name' => 'mmo',
+                'prefix' => 'mmo_',
+                'username' => 'mmo',
+                'password' => 'db-secret',
+            ],
             'server' => [
                 'host' => '127.0.0.1',
                 'port' => 8080,

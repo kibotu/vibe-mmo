@@ -7,10 +7,29 @@ use PDO;
 
 final class Database
 {
+    /** @var list<string> Unprefixed table names owned by this application. */
+    public const TABLES = ['schema_migrations', 'rooms', 'players', 'player_sessions'];
+
     private ?PDO $pdo = null;
 
     public function __construct(private readonly Config $config)
     {
+    }
+
+    /**
+     * Resolves an unprefixed table name to its configured, prefixed identifier.
+     *
+     * Passing an unknown name is a programming error rather than a missing
+     * table, so it throws instead of building an identifier that would only
+     * fail later as a MySQL error.
+     */
+    public function table(string $name): string
+    {
+        if (!in_array($name, self::TABLES, true)) {
+            throw new \InvalidArgumentException(sprintf('Unknown table "%s".', $name));
+        }
+
+        return $this->config->string('database.prefix') . $name;
     }
 
     public function pdo(): PDO

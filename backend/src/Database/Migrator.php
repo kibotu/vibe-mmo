@@ -17,8 +17,9 @@ final class Migrator
     public function migrate(string $migrationsDirectory): array
     {
         $pdo = $this->database->pdo();
-        $pdo->exec(<<<'SQL'
-            CREATE TABLE IF NOT EXISTS schema_migrations (
+        $prefix = $this->config->string('database.prefix');
+        $pdo->exec(<<<SQL
+            CREATE TABLE IF NOT EXISTS {$prefix}schema_migrations (
                 version VARCHAR(128) NOT NULL PRIMARY KEY,
                 checksum CHAR(64) NOT NULL,
                 applied_at DATETIME(6) NOT NULL
@@ -27,8 +28,13 @@ final class Migrator
 
         $files = glob(rtrim($migrationsDirectory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . '*.sql') ?: [];
         sort($files, SORT_STRING);
-        $statement = $pdo->prepare('SELECT checksum FROM schema_migrations WHERE version = :version');
-        $record = $pdo->prepare('INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (:version, :checksum, UTC_TIMESTAMP(6))');
+        $statement = $pdo->prepare(
+            'SELECT checksum FROM ' . $this->database->table('schema_migrations') . ' WHERE version = :version',
+        );
+        $record = $pdo->prepare(
+            'INSERT INTO ' . $this->database->table('schema_migrations')
+            . ' (version, checksum, applied_at) VALUES (:version, :checksum, UTC_TIMESTAMP(6))',
+        );
         $completed = [];
 
         foreach ($files as $file) {
@@ -37,6 +43,8 @@ final class Migrator
             if ($sql === false) {
                 throw new \RuntimeException('A migration file could not be read.');
             }
+            // The checksum covers the template, not the rendered SQL, so changing
+            // database.prefix never invalidates an already applied migration.
             $checksum = hash('sha256', $sql);
             $statement->execute(['version' => $version]);
             $existing = $statement->fetchColumn();
@@ -48,7 +56,7 @@ final class Migrator
             }
 
             foreach (self::splitStatements($sql) as $migrationSql) {
-                $pdo->exec($migrationSql);
+                $pdo->exec(str_replace('{prefix}', $prefix, $migrationSql));
             }
             $record->execute(['version' => $version, 'checksum' => $checksum]);
             $completed[] = $version;
@@ -62,7 +70,8 @@ final class Migrator
     public function appliedVersions(string $migrationsDirectory): array
     {
         unset($migrationsDirectory);
-        $statement = $this->database->pdo()->query('SELECT version FROM schema_migrations ORDER BY version');
+        $statement = $this->database->pdo()
+            ->query('SELECT version FROM ' . $this->database->table('schema_migrations') . ' ORDER BY version');
         if ($statement === false) {
             return [];
         }
@@ -73,7 +82,8 @@ final class Migrator
     private function ensureDefaultRoom(PDO $pdo): void
     {
         $statement = $pdo->prepare(
-            'INSERT IGNORE INTO rooms (code, name, status, max_players, created_at, updated_at)
+            'INSERT IGNORE INTO ' . $this->database->table('rooms')
+            . ' (code, name, status, max_players, created_at, updated_at)
              VALUES (:code, :name, \'active\', :max_players, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))',
         );
         $statement->execute([

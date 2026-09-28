@@ -115,6 +115,34 @@ Before starting a new production database:
 5. Review `server.max_connections` and room limits against the VPS capacity.
 6. Confirm the database volume backup policy.
 
+### Table prefix
+
+Every table this application owns is prefixed with `database.prefix`, which defaults to the required value `mmo_`:
+
+```text
+mmo_rooms
+mmo_players
+mmo_player_sessions
+mmo_schema_migrations
+```
+
+Index and constraint names carry the same prefix, because MySQL requires foreign-key symbols to be unique per schema. The prefix keeps the MMO schema isolated on a shared database that also hosts other applications.
+
+`database.prefix` is a required setting and must match `^[A-Za-z][A-Za-z0-9]{0,30}_$`; it is not permitted to be empty, so tables can never silently become unprefixed. `Database::table()` refuses any name outside its known table list, so a typo fails loudly instead of producing an unknown table.
+
+Migration files are written as templates containing a `{prefix}` token. The migration checksum is computed over the template, not the rendered SQL, so changing the prefix later never invalidates an already applied migration. The token is substituted at execution time.
+
+> **Existing databases.** Prefixed tables were introduced before the first production deployment, so no production data required a rename. A database that already carries *unprefixed* `rooms`, `players`, or `player_sessions` tables must be renamed before the new code runs, otherwise the application will not find its tables. The rename is a deliberate, one-time operation:
+
+> ```sql
+> RENAME TABLE rooms TO mmo_rooms,
+>              players TO mmo_players,
+>              player_sessions TO mmo_player_sessions,
+>              schema_migrations TO mmo_schema_migrations;
+> ```
+
+> The foreign-key constraint and index names inside those tables keep their old names, which is harmless; they may be renamed afterwards for tidiness.
+
 The PHP container runs `php bin/migrate.php` before Supervisor starts. Do not expose a public migration endpoint.
 
 MariaDB `_FILE` values are applied only when its data volume is initialized. Changing `database.password` in YAML does not rotate an existing database user. Use a controlled SQL rotation while the service is stopped, update the secret, and then restart; never use `docker compose down -v` as a password-rotation procedure because it destroys the database volume.

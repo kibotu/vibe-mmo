@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS rooms (
+CREATE TABLE IF NOT EXISTS {prefix}rooms (
     code VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     name VARCHAR(64) NOT NULL,
     status VARCHAR(16) NOT NULL DEFAULT 'active',
@@ -6,10 +6,10 @@ CREATE TABLE IF NOT EXISTS rooms (
     created_at DATETIME(6) NOT NULL,
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     PRIMARY KEY (code),
-    CONSTRAINT chk_rooms_status CHECK (status IN ('active', 'paused', 'inactive'))
+    CONSTRAINT {prefix}chk_rooms_status CHECK (status IN ('active', 'paused', 'inactive'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS players (
+CREATE TABLE IF NOT EXISTS {prefix}players (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     public_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     name VARCHAR(24) NOT NULL,
@@ -26,13 +26,13 @@ CREATE TABLE IF NOT EXISTS players (
     created_at DATETIME(6) NOT NULL,
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     PRIMARY KEY (id),
-    UNIQUE KEY uq_players_public_id (public_id),
-    KEY idx_players_room (room_code),
-    CONSTRAINT fk_players_room FOREIGN KEY (room_code) REFERENCES rooms (code) ON UPDATE CASCADE ON DELETE SET NULL,
-    CONSTRAINT chk_players_state CHECK (state IN ('idle', 'walk', 'attack', 'hurt', 'dead'))
+    UNIQUE KEY {prefix}uq_players_public_id (public_id),
+    KEY {prefix}idx_players_room (room_code),
+    CONSTRAINT {prefix}fk_players_room FOREIGN KEY (room_code) REFERENCES {prefix}rooms (code) ON UPDATE CASCADE ON DELETE SET NULL,
+    CONSTRAINT {prefix}chk_players_state CHECK (state IN ('idle', 'walk', 'attack', 'hurt', 'dead'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS player_sessions (
+CREATE TABLE IF NOT EXISTS {prefix}player_sessions (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     player_id BIGINT UNSIGNED NOT NULL,
     selector CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -44,9 +44,9 @@ CREATE TABLE IF NOT EXISTS player_sessions (
     created_at DATETIME(6) NOT NULL,
     last_seen_at DATETIME(6) NOT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_player_sessions_player (player_id),
-    UNIQUE KEY uq_player_sessions_selector (selector),
-    KEY idx_player_sessions_ticket (websocket_ticket_hash),
-    KEY idx_player_sessions_expiry (expires_at),
-    CONSTRAINT fk_player_sessions_player FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
+    UNIQUE KEY {prefix}uq_player_sessions_player (player_id),
+    UNIQUE KEY {prefix}uq_player_sessions_selector (selector),
+    KEY {prefix}idx_player_sessions_ticket (websocket_ticket_hash),
+    KEY {prefix}idx_player_sessions_expiry (expires_at),
+    CONSTRAINT {prefix}fk_player_sessions_player FOREIGN KEY (player_id) REFERENCES {prefix}players (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

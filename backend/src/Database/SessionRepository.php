@@ -23,7 +23,8 @@ final class SessionRepository
         $pdo->beginTransaction();
         try {
             $player = $pdo->prepare(
-                'INSERT INTO players (public_id, name, room_code, hp, x, y, z, inventory, last_processed_input, state, created_at, updated_at)
+                'INSERT INTO ' . $this->database->table('players')
+                . ' (public_id, name, room_code, hp, x, y, z, inventory, last_processed_input, state, created_at, updated_at)
                  VALUES (:public_id, :name, :room_code, 40, 32.5, :y, 32.5, :inventory, 0, \'idle\', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))',
             );
             $player->execute([
@@ -36,7 +37,8 @@ final class SessionRepository
             $playerId = (int) $pdo->lastInsertId();
 
             $session = $pdo->prepare(
-                'INSERT INTO player_sessions (player_id, selector, validator_hash, expires_at, created_at, last_seen_at)
+                'INSERT INTO ' . $this->database->table('player_sessions')
+                . ' (player_id, selector, validator_hash, expires_at, created_at, last_seen_at)
                  VALUES (:player_id, :selector, :validator_hash, :expires_at, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))',
             );
             $session->execute([
@@ -67,8 +69,8 @@ final class SessionRepository
 
         $statement = $this->database->pdo()->prepare(
             'SELECT s.id AS session_id, s.expires_at, p.id, p.public_id, p.name, p.room_code
-             FROM player_sessions s
-             INNER JOIN players p ON p.id = s.player_id
+             FROM ' . $this->database->table('player_sessions') . ' s
+             INNER JOIN ' . $this->database->table('players') . ' p ON p.id = s.player_id
              WHERE s.selector = :selector AND s.validator_hash = :validator_hash
              LIMIT 1',
         );
@@ -81,7 +83,9 @@ final class SessionRepository
             return null;
         }
 
-        $touch = $this->database->pdo()->prepare('UPDATE player_sessions SET last_seen_at = UTC_TIMESTAMP(6) WHERE id = :id');
+        $touch = $this->database->pdo()->prepare(
+            'UPDATE ' . $this->database->table('player_sessions') . ' SET last_seen_at = UTC_TIMESTAMP(6) WHERE id = :id',
+        );
         $touch->execute(['id' => (int) $row['session_id']]);
 
         return new GuestIdentity(
@@ -100,7 +104,7 @@ final class SessionRepository
             ->modify(sprintf('+%d seconds', $lifetimeSeconds))
             ->format('Y-m-d H:i:s.u');
         $statement = $this->database->pdo()->prepare(
-            'UPDATE player_sessions
+            'UPDATE ' . $this->database->table('player_sessions') . '
              SET websocket_ticket_hash = :ticket_hash,
                  websocket_ticket_expires_at = :expires_at,
                  websocket_ticket_consumed_at = NULL,
@@ -132,9 +136,9 @@ final class SessionRepository
             $statement = $pdo->prepare(
                 'SELECT s.id AS session_id, p.*, r.code AS joined_room_code, r.name AS joined_room_name,
                         r.max_players AS joined_room_max_players
-                 FROM player_sessions s
-                 INNER JOIN players p ON p.id = s.player_id
-                 INNER JOIN rooms r ON r.code = p.room_code
+                 FROM ' . $this->database->table('player_sessions') . ' s
+                 INNER JOIN ' . $this->database->table('players') . ' p ON p.id = s.player_id
+                 INNER JOIN ' . $this->database->table('rooms') . ' r ON r.code = p.room_code
                  WHERE s.websocket_ticket_hash = :ticket_hash
                    AND s.websocket_ticket_consumed_at IS NULL
                    AND s.websocket_ticket_expires_at > UTC_TIMESTAMP(6)
@@ -152,7 +156,7 @@ final class SessionRepository
             }
 
             $consume = $pdo->prepare(
-                'UPDATE player_sessions
+                'UPDATE ' . $this->database->table('player_sessions') . '
                  SET websocket_ticket_consumed_at = UTC_TIMESTAMP(6), last_seen_at = UTC_TIMESTAMP(6)
                  WHERE id = :id AND websocket_ticket_consumed_at IS NULL',
             );
@@ -181,14 +185,15 @@ final class SessionRepository
     public function updateRoom(int $playerId, string $roomCode): void
     {
         $statement = $this->database->pdo()->prepare(
-            'UPDATE players SET room_code = :room_code, updated_at = UTC_TIMESTAMP(6) WHERE id = :id',
+            'UPDATE ' . $this->database->table('players')
+            . ' SET room_code = :room_code, updated_at = UTC_TIMESTAMP(6) WHERE id = :id',
         );
         $statement->execute(['room_code' => $roomCode, 'id' => $playerId]);
     }
 
     private function playerPublicId(PDO $pdo, int $playerId): string
     {
-        $statement = $pdo->prepare('SELECT public_id FROM players WHERE id = :id');
+        $statement = $pdo->prepare('SELECT public_id FROM ' . $this->database->table('players') . ' WHERE id = :id');
         $statement->execute(['id' => $playerId]);
         $publicId = $statement->fetchColumn();
         if (!is_string($publicId)) {

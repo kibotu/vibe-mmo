@@ -15,11 +15,13 @@ final class RoomRepository
     /** @return list<array{code: string, name: string, status: string, playerCount: int, maxPlayers: int}> */
     public function publicRooms(): array
     {
+        $rooms = $this->database->table('rooms');
+        $players = $this->database->table('players');
         $statement = $this->database->pdo()->query(
             "SELECT r.code, r.name, r.status, r.max_players,
                     COUNT(p.id) AS player_count
-             FROM rooms r
-             LEFT JOIN players p ON p.room_code = r.code
+             FROM {$rooms} r
+             LEFT JOIN {$players} p ON p.room_code = r.code
              WHERE r.status IN ('active', 'paused')
              GROUP BY r.code, r.name, r.status, r.max_players
              ORDER BY r.code",
@@ -45,7 +47,8 @@ final class RoomRepository
     public function isJoinable(string $code): bool
     {
         $statement = $this->database->pdo()->prepare(
-            "SELECT 1 FROM rooms WHERE code = :code AND status IN ('active', 'paused') LIMIT 1",
+            'SELECT 1 FROM ' . $this->database->table('rooms')
+            . ' WHERE code = :code AND status IN (\'active\', \'paused\') LIMIT 1',
         );
         $statement->execute(['code' => $code]);
 
@@ -55,14 +58,17 @@ final class RoomRepository
     public function setStatus(string $code, string $status): void
     {
         $statement = $this->database->pdo()->prepare(
-            'UPDATE rooms SET status = :status, updated_at = UTC_TIMESTAMP(6) WHERE code = :code',
+            'UPDATE ' . $this->database->table('rooms')
+            . ' SET status = :status, updated_at = UTC_TIMESTAMP(6) WHERE code = :code',
         );
         $statement->execute(['status' => $status, 'code' => $code]);
     }
 
     public function maxPlayers(string $code): int
     {
-        $statement = $this->database->pdo()->prepare('SELECT max_players FROM rooms WHERE code = :code LIMIT 1');
+        $statement = $this->database->pdo()->prepare(
+            'SELECT max_players FROM ' . $this->database->table('rooms') . ' WHERE code = :code LIMIT 1',
+        );
         $statement->execute(['code' => $code]);
         $value = $statement->fetchColumn();
 

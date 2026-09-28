@@ -46,6 +46,7 @@ final class Config
         'database.host',
         'database.port',
         'database.name',
+        'database.prefix',
         'database.username',
         'database.password',
         'server.host',
@@ -212,6 +213,9 @@ final class Config
 
         if ($this->int('database.port') < 1 || $this->int('database.port') > 65535) {
             throw new ConfigException('Configuration value "database.port" is out of range.');
+        }
+        if (preg_match('/^[A-Za-z][A-Za-z0-9]{0,30}_$/D', $this->string('database.prefix')) !== 1) {
+            throw new ConfigException('Configuration value "database.prefix" must be an identifier ending in an underscore, for example "mmo_".');
         }
         if ($this->int('server.port') < 1 || $this->int('server.port') > 65535) {
             throw new ConfigException('Configuration value "server.port" is out of range.');

@@ -16,7 +16,7 @@ final class PlayerRepository
         $statement = $this->database->pdo()->prepare(
             'SELECT id, public_id, name, room_code, hp, x, y, z, inventory,
                     last_processed_input, state, target_id, next_attack_at
-             FROM players WHERE public_id = :public_id LIMIT 1',
+             FROM ' . $this->database->table('players') . ' WHERE public_id = :public_id LIMIT 1',
         );
         $statement->execute(['public_id' => $publicId]);
         $row = $statement->fetch();
@@ -36,7 +36,7 @@ final class PlayerRepository
 
         $pdo = $this->database->pdo();
         $statement = $pdo->prepare(
-            'UPDATE players
+            'UPDATE ' . $this->database->table('players') . '
              SET hp = :hp, x = :x, y = :y, z = :z, inventory = :inventory,
                  last_processed_input = :last_processed_input, state = :state,
                  target_id = :target_id, next_attack_at = :next_attack_at,

@@ -75,6 +75,9 @@ compose.desktop {
     application {
         mainClass = "net.kibotu.ro.client.MainKt"
         
+        // Required for GLFW/LibGDX on macOS - must run on main thread
+        jvmArgs += listOf("-XstartOnFirstThread")
+        
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Ragnarok Online Client"

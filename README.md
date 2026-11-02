@@ -65,17 +65,38 @@ The easiest way to get started is using the provided scripts:
 
 **Note:** All scripts automatically clean up processes when closed or interrupted, so you don't need to worry about orphaned processes.
 
-### Linux/Mac
+### macOS/Linux
 
-```bash
-# Terminal 1 - Start all servers (or use separate terminals)
-./gradlew :account-server:run &
-./gradlew :character-server:run &
-./gradlew :zone-server:run &
+The easiest way to get started is using the provided scripts:
 
-# Terminal 2 - Start client
-./gradlew :game-client:run
-```
+1. **Start all servers:**
+   ```bash
+   ./start-servers.sh
+   ```
+   This will start all three servers (Account Server on port 28080, Character Server on port 28081, Zone Server on port 28082) in the background.
+   
+   **Important:** 
+   - **Account Server** and **Character Server** allow only **ONE instance** per machine
+   - **Zone Server** allows **multiple instances** (use `./start-zone-server.sh [PORT]` for additional instances)
+   - The script will prevent starting duplicate account/character servers
+
+2. **Start the client:**
+   ```bash
+   ./start-client.sh
+   ```
+   **Note:** Multiple client instances are allowed. You can run multiple clients simultaneously.
+
+3. **Start additional zone servers:**
+   ```bash
+   # Start a zone server on a custom port (e.g., 28084)
+   ./start-zone-server.sh 28084
+   ```
+
+4. **Stop all servers:**
+   - Press `Ctrl+C` in the main server window, or
+   - Run `./stop-servers.sh` to manually stop all servers
+
+**Note:** All scripts automatically clean up processes when closed or interrupted, so you don't need to worry about orphaned processes.
 
 ## Build Tools
 
